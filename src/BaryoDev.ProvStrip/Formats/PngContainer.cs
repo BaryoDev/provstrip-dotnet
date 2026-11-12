@@ -56,7 +56,17 @@ internal sealed class PngContainer : IContainer
         return segments;
     }
 
-    public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) => Structural.Contains(segment.Label);
+    // Chunks with a fixed layout are structure only at their specified length, so no extra bytes ride along.
+    static readonly Dictionary<string, int[]> FixedLengths = new(StringComparer.Ordinal)
+    {
+        ["IHDR"] = [13], ["IEND"] = [0], ["gAMA"] = [4], ["cHRM"] = [32], ["sRGB"] = [1], ["pHYs"] = [9],
+        ["cICP"] = [4], ["mDCv"] = [24], ["cLLi"] = [8], ["acTL"] = [8], ["fcTL"] = [26],
+        ["sBIT"] = [1, 2, 3, 4], ["bKGD"] = [1, 2, 6],
+    };
+
+    public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) =>
+        Structural.Contains(segment.Label) &&
+        (!FixedLengths.TryGetValue(segment.Label, out var lengths) || lengths.Contains(segment.Length - 12));
 
     // Ancillary chunks (lowercase first letter) can go; a decoder must understand critical ones.
     public bool IsSafeToDrop(Segment segment) =>

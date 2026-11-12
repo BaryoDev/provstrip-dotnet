@@ -87,7 +87,7 @@ internal sealed class JpegContainer : IContainer
         "SOI" or "DHT" or "DQT" or "DRI" or "DAC" or "DNL" or "SOS" or "EOI" => true,
         "APP0" => segment.Keyword == "JFIF" && IsExactJfif(PayloadSpan(segment, bytes)),
         "APP14" => segment.Keyword == "Adobe" && PayloadSpan(segment, bytes).Length == 12,
-        "APP2" => segment.Keyword == "MPF",
+        "APP2" => segment.Keyword == "MPF" && Mpf.IsExact(PayloadSpan(segment, bytes)),
         Trailer => HasMpf(bytes) && TrailerHoldsOnlyImages(bytes[segment.Start..segment.End]),
         var l => l.StartsWith("SOF", StringComparison.Ordinal),
     };

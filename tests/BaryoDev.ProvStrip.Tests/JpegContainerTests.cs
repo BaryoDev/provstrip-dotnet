@@ -106,4 +106,34 @@ public class JpegContainerTests
     [Fact] public void JfifWithAThumbnailIsAFinding() =>
         OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE0, [.. "JFIF"u8, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 2, 3]))
             .ShouldSatisfyAllConditions(f => f.Label().ShouldBe("APP0"), f => f.CanDelete.ShouldBeTrue());
+
+    // An MPF index the way Ultra HDR writers lay it out: version, image count and two MP entries, nothing more.
+    static byte[] MpfIndex(byte[]? extra = null)
+    {
+        byte[] tiff =
+        [
+            .. "II*\0"u8, 8, 0, 0, 0,
+            3, 0,
+            0x00, 0xB0, 7, 0, 4, 0, 0, 0, .. "0100"u8,
+            0x01, 0xB0, 4, 0, 1, 0, 0, 0, 2, 0, 0, 0,
+            0x02, 0xB0, 7, 0, 32, 0, 0, 0, 50, 0, 0, 0,
+            0, 0, 0, 0,
+            .. new byte[32],
+        ];
+        return [.. "MPF\0"u8, .. tiff, .. extra ?? []];
+    }
+
+    [Fact] public void ExactMpfIndexIsStructural() =>
+        ProvStripEngine.Inspect(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE2, MpfIndex())).IsClean.ShouldBeTrue();
+
+    [Fact] public void MpfWithExtraBytesIsAFinding() =>
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE2, MpfIndex("hidden text"u8.ToArray())))
+            .ShouldSatisfyAllConditions(f => f.Label().ShouldBe("APP2"), f => f.Category.ShouldBe(Category.Unknown));
+
+    [Fact] public void MpfWithAnUnknownTagIsAFinding()
+    {
+        var mpf = MpfIndex();
+        mpf[4 + 10 + 24] = 0x99; // third entry's tag low byte: 0xB099
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE2, mpf)).Label().ShouldBe("APP2");
+    }
 }

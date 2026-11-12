@@ -102,4 +102,18 @@ public class WebpContainerTests
         ProvStripEngine.Inspect(output).Findings.Where(f => f.Segment.Label == "ANMF").ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             f => f.Segment.Label.ShouldBe("ANMF"), f => f.Category.ShouldBe(Category.Unknown), f => f.CanDelete.ShouldBeFalse());
     }
+
+    // ANIM is a background colour and a loop count, exactly 6 bytes. Anything longer is not structure.
+    [Fact]
+    public void LongAnimIsNotStructural()
+    {
+        var input = Fixtures.Read("animated.webp");
+        var anim = Webp.ReadSegments(input).Single(s => s.Label == "ANIM");
+        Webp.IsStructural(anim, input).ShouldBeTrue();
+        var at = anim.Start + 8 + 6;
+        byte[] output = [.. input[..at], .. "hide"u8, .. input[at..]];
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(anim.Start + 4), 10);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(4), (uint)(output.Length - 8));
+        Webp.IsStructural(Webp.ReadSegments(output).Single(s => s.Label == "ANIM"), output).ShouldBeFalse();
+    }
 }

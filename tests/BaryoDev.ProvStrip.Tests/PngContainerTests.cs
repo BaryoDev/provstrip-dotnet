@@ -94,4 +94,34 @@ public class PngContainerTests
         Png.IsStructural(splt, input).ShouldBeFalse();
         splt.Keyword.ShouldBe("Fixture Tool");
     }
+
+    // A chunk with a fixed layout is image structure only at that length. Extra bytes could carry anything.
+    [Theory]
+    [InlineData("gAMA", 4, true)] [InlineData("gAMA", 5, false)]
+    [InlineData("cHRM", 32, true)] [InlineData("cHRM", 40, false)]
+    [InlineData("sRGB", 1, true)] [InlineData("sRGB", 9, false)]
+    [InlineData("pHYs", 9, true)] [InlineData("pHYs", 10, false)]
+    [InlineData("cICP", 4, true)] [InlineData("cICP", 8, false)]
+    [InlineData("mDCv", 24, true)] [InlineData("mDCv", 30, false)]
+    [InlineData("cLLi", 8, true)] [InlineData("cLLi", 9, false)]
+    [InlineData("acTL", 8, true)] [InlineData("acTL", 12, false)]
+    [InlineData("fcTL", 26, true)] [InlineData("fcTL", 27, false)]
+    [InlineData("sBIT", 4, true)] [InlineData("sBIT", 5, false)]
+    [InlineData("bKGD", 6, true)] [InlineData("bKGD", 3, false)]
+    public void FixedLengthChunkIsStructuralOnlyAtItsLength(string type, int length, bool structural)
+    {
+        var input = Bytes.CleanPngWith(type, new byte[length]);
+        var chunk = Segments(input).Single(s => s.Label == type);
+        Png.IsStructural(chunk, input).ShouldBe(structural);
+    }
+
+    [Fact]
+    public void LongIhdrAndIendAreNotStructural()
+    {
+        var clean = Fixtures.Read("clean.png");
+        byte[] longIhdr = [.. clean[..8], .. Bytes.PngChunk("IHDR", [.. clean[16..29], 0]), .. clean[33..]];
+        Png.IsStructural(Segments(longIhdr).Single(s => s.Label == "IHDR"), longIhdr).ShouldBeFalse();
+        byte[] longIend = [.. clean[..^12], .. Bytes.PngChunk("IEND", [1, 2, 3])];
+        Png.IsStructural(Segments(longIend).Single(s => s.Label == "IEND"), longIend).ShouldBeFalse();
+    }
 }

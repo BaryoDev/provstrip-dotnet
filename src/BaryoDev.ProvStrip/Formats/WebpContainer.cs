@@ -44,8 +44,13 @@ internal sealed class WebpContainer : IContainer
         return segments;
     }
 
-    public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) =>
-        segment.Label == "ANMF" ? FrameHoldsOnlyImage(bytes.Slice(segment.Start + 8, (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(segment.Start + 4)..]))) : Structural.Contains(segment.Label);
+    // ANIM is a background colour and a loop count, exactly 6 bytes.
+    public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) => segment.Label switch
+    {
+        "ANMF" => FrameHoldsOnlyImage(bytes.Slice(segment.Start + 8, (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(segment.Start + 4)..]))),
+        "ANIM" => BinaryPrimitives.ReadUInt32LittleEndian(bytes[(segment.Start + 4)..]) == 6,
+        var l => Structural.Contains(l),
+    };
 
     // A frame is a 16-byte header and then chunks of its own. Only image data may sit inside one.
     static bool FrameHoldsOnlyImage(ReadOnlySpan<byte> frame)
