@@ -67,4 +67,39 @@ public class PngContainerTests
     [Fact] public void CriticalUnknownIsNot() => Png.IsSafeToDrop(new Segment(0, 12, "QXQX")).ShouldBeFalse();
 
     [Fact] public void IccpIsNotStructural() => Png.IsStructural(new Segment(0, 12, "iCCP"), []).ShouldBeFalse();
+
+    static byte[] Chunk(string type, byte[] data)
+    {
+        var typeBytes = System.Text.Encoding.ASCII.GetBytes(type);
+        var crc = PngContainer.Crc32([.. typeBytes, .. data]);
+        return [(byte)(data.Length >> 24), (byte)(data.Length >> 16), (byte)(data.Length >> 8), (byte)data.Length,
+            .. typeBytes, .. data, (byte)(crc >> 24), (byte)(crc >> 16), (byte)(crc >> 8), (byte)crc];
+    }
+
+    [Fact] public void BytesAfterIendAreATrailerSegment()
+    {
+        byte[] input = [.. Fixtures.Read("clean.png"), .. "hidden after IEND"u8];
+        var last = Segments(input)[^1];
+        last.Label.ShouldBe("TRAILER");
+        last.End.ShouldBe(input.Length);
+        Png.IsStructural(last, input).ShouldBeFalse();
+        Png.IsSafeToDrop(last).ShouldBeTrue();
+        Png.Payload(last, input).ToArray().ShouldBe("hidden after IEND"u8.ToArray());
+    }
+
+    [Fact] public void DroppingTheTrailerLeavesTheImage()
+    {
+        var clean = Fixtures.Read("clean.png");
+        byte[] input = [.. clean, .. "hidden"u8];
+        Png.Rewrite(input, [new SegmentEdit(Segments(input)[^1], null)]).ShouldBe(clean);
+    }
+
+    [Fact] public void SuggestedPaletteNameReachesTheRules()
+    {
+        var clean = Fixtures.Read("clean.png");
+        byte[] input = [.. clean[..^12], .. Chunk("sPLT", [.. "Fixture Tool"u8, 0, 8, 0, 0, 0, 0, 0, 0]), .. clean[^12..]];
+        var splt = Segments(input).Single(s => s.Label == "sPLT");
+        Png.IsStructural(splt, input).ShouldBeFalse();
+        splt.Keyword.ShouldBe("Fixture Tool");
+    }
 }

@@ -107,4 +107,13 @@ public class EngineTests
         var rules = RuleSet.Parse("""{"provenanceMarkers":[],"standardIccDescriptions":[],"rules":[{"id":"mine","format":"png","label":"prVt","category":"camera","describe":"private"}]}""");
         ProvStripEngine.Inspect(Fixtures.Read("unknown-ancillary.png"), rules).Findings.ShouldHaveSingleItem().RuleId.ShouldBe("mine");
     }
+
+    [Fact] public void PngTrailerIsUnknownAndStrippable()
+    {
+        var clean = Fixtures.Read("clean.png");
+        byte[] input = [.. clean, .. "hidden"u8];
+        var finding = ProvStripEngine.Inspect(input).Findings.ShouldHaveSingleItem();
+        finding.Description.ShouldBe("unknown TRAILER segment");
+        ProvStripEngine.Strip(input, [finding]).Output.ShouldBe(clean);
+    }
 }

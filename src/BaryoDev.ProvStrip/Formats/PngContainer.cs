@@ -8,13 +8,16 @@ internal sealed class PngContainer : IContainer
 {
     static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-    // Needed to decode the image or to show it as intended. iCCP is not here: the rules decide it.
+    // Needed to decode the image or to show it as intended, and holding no text. iCCP and sPLT carry a name,
+    // so the rules decide them.
     static readonly HashSet<string> Structural = new(StringComparer.Ordinal)
     {
         "IHDR", "IDAT", "IEND", "PLTE", "tRNS",
         "gAMA", "cHRM", "sRGB", "sBIT", "cICP", "mDCv", "cLLi",
-        "bKGD", "hIST", "pHYs", "sPLT", "acTL", "fcTL", "fdAT",
+        "bKGD", "hIST", "pHYs", "acTL", "fcTL", "fdAT",
     };
+
+    const string Trailer = "TRAILER";
 
     public string Format => "png";
 
@@ -47,16 +50,22 @@ internal sealed class PngContainer : IContainer
 
         if (segments.Count == 0 || segments[^1].Label != "IEND")
             throw new ProvStripFormatException("PNG has no IEND chunk", bytes.Length);
+
+        // Bytes after IEND are no part of the image, but they can carry anything, so they are a segment too.
+        if (i < bytes.Length) segments.Add(new Segment(i, bytes.Length - i, Trailer));
         return segments;
     }
 
     public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) => Structural.Contains(segment.Label);
 
     // Ancillary chunks (lowercase first letter) can go; a decoder must understand critical ones.
-    public bool IsSafeToDrop(Segment segment) => segment.Label.Length == 4 && char.IsLower(segment.Label[0]);
+    public bool IsSafeToDrop(Segment segment) =>
+        segment.Label == Trailer || segment.Label.Length == 4 && char.IsLower(segment.Label[0]);
 
     public ReadOnlyMemory<byte> Payload(Segment segment, ReadOnlyMemory<byte> bytes) =>
-        bytes.Slice(segment.Start + 8, segment.Length - 12);
+        segment.Label == Trailer
+            ? bytes.Slice(segment.Start, segment.Length)
+            : bytes.Slice(segment.Start + 8, segment.Length - 12);
 
     public byte[] Rewrite(ReadOnlyMemory<byte> memory, IReadOnlyList<SegmentEdit> edits)
     {
@@ -67,10 +76,8 @@ internal sealed class PngContainer : IContainer
 
         Span<byte> head = stackalloc byte[8];
         Span<byte> crc = stackalloc byte[4];
-        var end = 8;
         foreach (var segment in ReadSegments(memory))
         {
-            end = segment.End;
             if (!byStart.TryGetValue(segment.Start, out var edit))
             {
                 output.Write(bytes.Slice(segment.Start, segment.Length));
@@ -85,15 +92,12 @@ internal sealed class PngContainer : IContainer
             BinaryPrimitives.WriteUInt32BigEndian(crc, Crc32([.. head[4..], .. data]));
             output.Write(crc);
         }
-
-        // Anything after IEND is not ours to judge, so it is copied as it was.
-        output.Write(bytes[end..]);
         return output.ToArray();
     }
 
     static string? KeywordOf(string type, ReadOnlySpan<byte> data)
     {
-        if (type is not ("tEXt" or "zTXt" or "iTXt" or "iCCP")) return null;
+        if (type is not ("tEXt" or "zTXt" or "iTXt" or "iCCP" or "sPLT")) return null;
         var nul = data.IndexOf((byte)0);
         return nul < 0 ? null : Encoding.Latin1.GetString(data[..nul]);
     }
