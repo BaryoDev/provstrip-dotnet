@@ -1,0 +1,15 @@
+<Project>
+  <!-- This repository's own packages go through its own pack step, using the task built from source. -->
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <ProvStripImport>$(MSBuildThisFileDirectory)src/BaryoDev.ProvStrip.Build/build/</ProvStripImport>
+    <ProvStripTaskAssembly>$(MSBuildThisFileDirectory)src/BaryoDev.ProvStrip.Build/bin/$(Configuration)/net8.0/BaryoDev.ProvStrip.Build.dll</ProvStripTaskAssembly>
+    <ProvStripTaskHost>true</ProvStripTaskHost>
+  </PropertyGroup>
+  <!-- Build order only: the task must exist before any other package here is packed. -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false' and '$(MSBuildProjectName)' != 'BaryoDev.ProvStrip.Build'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)src/BaryoDev.ProvStrip.Build/BaryoDev.ProvStrip.Build.csproj"
+                      ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+  <Import Project="$(ProvStripImport)BaryoDev.ProvStrip.Build.props" Condition="'$(IsPackable)' != 'false'" />
+  <Import Project="$(ProvStripImport)BaryoDev.ProvStrip.Build.targets" Condition="'$(IsPackable)' != 'false'" />
+</Project>

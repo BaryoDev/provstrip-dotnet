@@ -1,0 +1,22 @@
+<Project>
+  <!-- Out of process when asked (this repository builds the task it uses), so the DLL is never held open. -->
+  <UsingTask TaskName="BaryoDev.ProvStrip.Build.ProvStripPackTask" AssemblyFile="$(ProvStripTaskAssembly)"
+             Condition="'$(ProvStripTaskHost)' != 'true'" />
+  <UsingTask TaskName="BaryoDev.ProvStrip.Build.ProvStripPackTask" AssemblyFile="$(ProvStripTaskAssembly)"
+             TaskFactory="TaskHostFactory" Condition="'$(ProvStripTaskHost)' == 'true'" />
+
+  <Target Name="ProvStripCheckPackageFiles" BeforeTargets="GenerateNuspec" DependsOnTargets="_GetPackageFiles"
+          Condition="'$(ProvStripEnabled)' == 'true'">
+    <Error Condition="'$(MSBuildRuntimeType)' != 'Core'" Code="PROVSTRIP000" Text="ProvStrip's pack step runs under dotnet pack only." />
+    <ProvStripPackTask Files="@(_PackageFiles)" Provenance="$(ProvStripProvenance)" Camera="$(ProvStripCamera)"
+                       KeepUnknown="$(ProvStripKeepUnknown)" RulesFile="$(ProvStripRulesFile)"
+                       OutputDirectory="$(IntermediateOutputPath)provstrip/">
+      <Output TaskParameter="Originals" ItemName="_ProvStripOriginal" />
+      <Output TaskParameter="Cleaned" ItemName="_ProvStripCleaned" />
+    </ProvStripPackTask>
+    <ItemGroup>
+      <_PackageFiles Remove="@(_ProvStripOriginal)" />
+      <_PackageFiles Include="@(_ProvStripCleaned)" />
+    </ItemGroup>
+  </Target>
+</Project>

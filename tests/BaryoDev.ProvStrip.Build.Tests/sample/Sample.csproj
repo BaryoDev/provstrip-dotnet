@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="$(ProvStripImport)BaryoDev.ProvStrip.Build.props" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>ProvStrip.Sample</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>sample</Authors>
+    <Description>A sample package for the ProvStrip pack step tests.</Description>
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="icon.png" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <Import Project="$(ProvStripImport)BaryoDev.ProvStrip.Build.targets" />
+</Project>

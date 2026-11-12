@@ -2,9 +2,11 @@
   <Folder Name="/src/">
     <Project Path="src/BaryoDev.ProvStrip/BaryoDev.ProvStrip.csproj" />
     <Project Path="src/BaryoDev.ProvStrip.Tool/BaryoDev.ProvStrip.Tool.csproj" />
+    <Project Path="src/BaryoDev.ProvStrip.Build/BaryoDev.ProvStrip.Build.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BaryoDev.ProvStrip.Tests/BaryoDev.ProvStrip.Tests.csproj" />
     <Project Path="tests/BaryoDev.ProvStrip.Tool.Tests/BaryoDev.ProvStrip.Tool.Tests.csproj" />
+    <Project Path="tests/BaryoDev.ProvStrip.Build.Tests/BaryoDev.ProvStrip.Build.Tests.csproj" />
   </Folder>
 </Solution>
