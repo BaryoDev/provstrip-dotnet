@@ -107,4 +107,12 @@ public class RuleSetTests
         RuleSet.Default.Classify("webp", new Segment(0, tiff.Length, "EXIF"), tiff)
             .ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag"));
     }
+
+    // The block goes as provenance, but the report still names the camera data riding in it.
+    [Fact] public void ExifSoftwareWithCameraDataNamesBoth()
+    {
+        byte[] tiff = [.. "II*\0"u8, 8, 0, 0, 0, 2, 0, 0x10, 0x01, 2, 0, 4, 0, 0, 0, .. "Cam\0"u8, 0x31, 0x01, 2, 0, 4, 0, 0, 0, .. "App\0"u8, 0, 0, 0, 0];
+        RuleSet.Default.Classify("webp", new Segment(0, tiff.Length, "EXIF"), tiff)
+            .ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag, camera model"));
+    }
 }

@@ -78,7 +78,8 @@ internal static class Exif
     /// <summary>What the block holds, for a label: "GPS, camera model, date taken".</summary>
     public static string Describe(ExifSummary s)
     {
-        var parts = new List<string>(3);
+        var parts = new List<string>(4);
+        if (s.HasSoftware) parts.Add("Software tag");
         if (s.HasGps) parts.Add("GPS");
         if (s.HasCameraModel) parts.Add("camera model");
         if (s.HasDateTaken) parts.Add("date taken");

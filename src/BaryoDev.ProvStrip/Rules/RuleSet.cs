@@ -116,7 +116,7 @@ public sealed class RuleSet
             ? RuleOutcome.Keep
             // A Software tag names the program that wrote the file, so the block is provenance, as a mixed XMP packet is.
             : summary.HasSoftware
-                ? new RuleOutcome.Match(Category.Provenance, rule.Id, "Software tag")
+                ? new RuleOutcome.Match(Category.Provenance, rule.Id, Exif.Describe(summary))
                 : new RuleOutcome.Match(Category.Camera, rule.Id, Exif.Describe(summary));
     }
 
