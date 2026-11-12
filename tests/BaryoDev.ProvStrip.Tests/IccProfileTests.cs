@@ -29,4 +29,20 @@ public class IccProfileTests
         RuleSet.Default.Classify("png", new Segment(0, payload.Length, "iCCP", "icc"), payload)
             .ShouldBe(new RuleOutcome.Match(Category.Camera, "png-icc", "colour profile \"Fixture Monitor 27\""));
     }
+
+    // A PNG iCCP chunk is a zlib stream. A small one can inflate to gigabytes, so reading stops at
+    // a cap and the profile counts as unreadable.
+    [Fact] public void DecompressionStopsAtTheCap()
+    {
+        using var ms = new MemoryStream();
+        using (var z = new System.IO.Compression.ZLibStream(ms, System.IO.Compression.CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            var zeros = new byte[1 << 20];
+            for (var i = 0; i < 64; i++) z.Write(zeros);
+        }
+        byte[] payload = [.. "icc\0"u8, 0, .. ms.ToArray()];
+        (IccProfile.FromPayload("png", payload) is null).ShouldBeTrue("a 64 MB profile must be refused, not returned");
+    }
+
+    [Fact] public void CorruptZlibIsUnreadable() => IccProfile.FromPayload("png", [.. "icc\0"u8, 0, 1, 2, 3, 4]).ShouldBeNull();
 }

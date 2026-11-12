@@ -6,6 +6,9 @@ namespace BaryoDev.ProvStrip.Rules;
 
 internal static class IccProfile
 {
+    /// <summary>Real profiles are kilobytes. A zlib stream that inflates past this is refused.</summary>
+    internal const int MaxProfileBytes = 4 * 1024 * 1024;
+
     /// <summary>The profile's description (v2 desc or v4 mluc), or null when it cannot be read.</summary>
     public static string? Description(ReadOnlySpan<byte> profile)
     {
@@ -36,20 +39,31 @@ internal static class IccProfile
                 // keyword, NUL, compression method, zlib stream
                 var nul = payload.IndexOf((byte)0);
                 if (nul < 0 || nul + 2 > payload.Length) return null;
-                try
-                {
-                    using var input = new MemoryStream(payload[(nul + 2)..].ToArray());
-                    using var z = new ZLibStream(input, CompressionMode.Decompress);
-                    using var output = new MemoryStream();
-                    z.CopyTo(output);
-                    return output.ToArray();
-                }
-                catch (InvalidDataException)
-                {
-                    return null;
-                }
+                return Inflate(payload[(nul + 2)..]);
             default:
                 return payload.ToArray();
+        }
+    }
+
+    static byte[]? Inflate(ReadOnlySpan<byte> compressed)
+    {
+        try
+        {
+            using var input = new MemoryStream(compressed.ToArray());
+            using var z = new ZLibStream(input, CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            var buffer = new byte[81920];
+            int read;
+            while ((read = z.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                if (output.Length + read > MaxProfileBytes) return null;
+                output.Write(buffer, 0, read);
+            }
+            return output.ToArray();
+        }
+        catch (Exception e) when (e is InvalidDataException or IOException)
+        {
+            return null;
         }
     }
 
