@@ -47,18 +47,18 @@ public static class ProvStripEngine
         var before = Inspect(file, rules);
         if (remove.Count == 0) return new StripResult(file.ToArray(), [], before.Findings);
 
+        var known = before.Findings.ToHashSet();
         var removed = remove.Distinct().ToList();
         foreach (var f in removed)
         {
-            if (!before.Findings.Contains(f))
+            if (!known.Contains(f))
                 throw new ArgumentException($"{f.Description} at byte {f.Segment.Start} is not in this file", nameof(remove));
             if (!f.CanDelete)
                 throw new ArgumentException($"{f.Description} at byte {f.Segment.Start} cannot be removed safely", nameof(remove));
         }
 
         // A segment inside one that is removed goes with it (SVG elements nest), so it is reported as removed too.
-        var inside = before.Findings.Where(f => !removed.Contains(f) && removed.Any(r =>
-            r.Segment.Start <= f.Segment.Start && f.Segment.End <= r.Segment.End)).ToList();
+        var inside = Inside(before.Findings, removed);
 
         var container = Resolve(file.Span);
         var edits = removed.Select(f => new SegmentEdit(f.Segment,
@@ -83,6 +83,30 @@ public static class ProvStripEngine
                 $"verify after strip failed: expected [{string.Join(", ", expected)}], found [{string.Join(", ", actual)}]");
 
         return new StripResult(output, removed, after.Findings);
+    }
+
+    // Findings not in removed whose segment lies within a removed one. Removed segments sorted by start with a
+    // running maximum end answer "does any removed segment starting at or before this one reach past its end"
+    // with one binary search, so this is O(n log n) rather than findings times removed.
+    static List<Finding> Inside(IReadOnlyList<Finding> findings, List<Finding> removed)
+    {
+        var removedSet = removed.ToHashSet();
+        var starts = removed.Select(r => r.Segment.Start).ToArray();
+        var ends = removed.Select(r => r.Segment.End).ToArray();
+        Array.Sort(starts, ends);
+        for (var i = 1; i < ends.Length; i++) ends[i] = Math.Max(ends[i], ends[i - 1]);
+
+        var inside = new List<Finding>();
+        foreach (var f in findings)
+        {
+            if (removedSet.Contains(f)) continue;
+            // Last index whose start is <= f's start.
+            var at = Array.BinarySearch(starts, f.Segment.Start);
+            if (at < 0) at = ~at - 1;
+            else while (at + 1 < starts.Length && starts[at + 1] == f.Segment.Start) at++;
+            if (at >= 0 && ends[at] >= f.Segment.End) inside.Add(f);
+        }
+        return inside;
     }
 
     static List<string> Keys(IEnumerable<Finding> findings) =>

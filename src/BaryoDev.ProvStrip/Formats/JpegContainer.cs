@@ -105,10 +105,11 @@ internal sealed class JpegContainer : IContainer
     // when every one of them is nothing but image structure.
     bool TrailerHoldsOnlyImages(ReadOnlySpan<byte> trailer)
     {
-        var rest = trailer.ToArray();
+        // One copy, then O(1) slices: copying the rest per image made a long trailer quadratic.
+        ReadOnlyMemory<byte> rest = trailer.ToArray();
         while (rest.Length > 0)
         {
-            if (!Sniff(rest)) return false;
+            if (!Sniff(rest.Span)) return false;
             IReadOnlyList<Segment> segments;
             try
             {
@@ -119,8 +120,8 @@ internal sealed class JpegContainer : IContainer
                 return false;
             }
             foreach (var s in segments)
-                if (s.Label != Trailer && !IsStructural(s, rest)) return false;
-            rest = segments[^1].Label == Trailer ? rest[segments[^1].Start..] : [];
+                if (s.Label != Trailer && !IsStructural(s, rest.Span)) return false;
+            rest = segments[^1].Label == Trailer ? rest[segments[^1].Start..] : ReadOnlyMemory<byte>.Empty;
         }
         return true;
     }
