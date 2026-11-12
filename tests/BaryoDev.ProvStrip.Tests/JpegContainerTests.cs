@@ -102,4 +102,8 @@ public class JpegContainerTests
         OnlyFinding(withExif).ShouldSatisfyAllConditions(
             f => f.Label().ShouldBe("TRAILER"), f => f.Category.ShouldBe(Category.Unknown), f => f.CanDelete.ShouldBeTrue());
     }
+
+    [Fact] public void JfifWithAThumbnailIsAFinding() =>
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE0, [.. "JFIF"u8, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 1, 2, 3]))
+            .ShouldSatisfyAllConditions(f => f.Label().ShouldBe("APP0"), f => f.CanDelete.ShouldBeTrue());
 }

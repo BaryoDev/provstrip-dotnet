@@ -92,9 +92,9 @@ internal sealed class JpegContainer : IContainer
         var l => l.StartsWith("SOF", StringComparison.Ordinal),
     };
 
-    // "JFIF\0", version, units, densities, then a thumbnail of exactly width * height * 3 bytes.
+    // "JFIF\0", version 1.x, units 0 to 2, densities, and no thumbnail: a thumbnail is raw bytes no rule reads.
     static bool IsExactJfif(ReadOnlySpan<byte> payload) =>
-        payload.Length >= 14 && payload.Length == 14 + 3 * payload[12] * payload[13];
+        payload.Length == 14 && payload[4] == 0 && payload[5] == 1 && payload[7] <= 2 && payload[12] == 0 && payload[13] == 0;
 
     ReadOnlySpan<byte> PayloadSpan(Segment segment, ReadOnlySpan<byte> bytes) =>
         bytes.Slice(segment.Start + 4, BinaryPrimitives.ReadUInt16BigEndian(bytes[(segment.Start + 2)..]) - 2);
