@@ -164,6 +164,9 @@ The first rule that matches wins. A segment no rule matches and no format keeps 
 
 - The pack step runs under `dotnet pack` only, not under Visual Studio's .NET Framework MSBuild.
 - PNG, JPEG, WebP and SVG only. Not AVIF, HEIC, GIF or PDF.
+- A JPEG with an HDR gain map (Ultra HDR, recent phones) carries a second image after the first, with metadata
+  of its own. ProvStrip reports it as an unknown trailer, so stripping such a file needs `--keep-unknown`, which
+  keeps the gain map as it is.
 - Metadata only. It does not look at pixels, so it does not detect generated content or remove watermarks
   drawn into the image.
 - Copies already served by a CDN or cached elsewhere are not purged.
