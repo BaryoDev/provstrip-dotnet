@@ -9,6 +9,7 @@ internal sealed class WebpContainer : IContainer
     const string Trailer = "TRAILER";
     const byte ExifFlag = 0x08;
     const byte XmpFlag = 0x04;
+    const byte IccFlag = 0x20;
 
     static readonly HashSet<string> Structural = new(StringComparer.Ordinal) { "VP8 ", "VP8L", "VP8X", "ALPH", "ANIM", "ANMF" };
 
@@ -117,6 +118,7 @@ internal sealed class WebpContainer : IContainer
         {
             if (!Remains("EXIF")) result[flagAt] &= unchecked((byte)~ExifFlag);
             if (!Remains("XMP ")) result[flagAt] &= unchecked((byte)~XmpFlag);
+            if (!Remains("ICCP")) result[flagAt] &= unchecked((byte)~IccFlag);
         }
         return result;
     }

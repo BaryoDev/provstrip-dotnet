@@ -39,7 +39,7 @@ XMP packet goes as a whole.
 - Everything a decoder needs: PNG critical chunks, JPEG tables and scans, WebP image and animation chunks, and
   the drawing elements of an SVG.
 
-When a WebP loses its `EXIF` or `XMP ` chunk, the matching flag bit in `VP8X` is cleared and the RIFF size is
+When a WebP loses its `EXIF`, `XMP ` or `ICCP` chunk, the matching flag bit in `VP8X` is cleared and the RIFF size is
 rewritten. Those are header edits, not re-encoding.
 
 ## Packages

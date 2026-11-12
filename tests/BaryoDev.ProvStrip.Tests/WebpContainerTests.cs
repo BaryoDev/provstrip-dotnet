@@ -61,6 +61,29 @@ public class WebpContainerTests
         if (!HasChunk(output, "XMP ") && HasChunk(output, "VP8X")) (Vp8xFlags(output) & 0x04).ShouldBe(0);
     }
 
+    // camera.webp with a machine colour profile in ICCP right after VP8X, and the VP8X ICC flag set.
+    static byte[] WithMachineIccp()
+    {
+        var input = Fixtures.Read("camera.webp");
+        var profile = Bytes.JpegPayload(Fixtures.Read("icc-machine.jpg"), 0xE2, "ICC_PROFILE")[14..];
+        byte[] chunk = [.. "ICCP"u8, 0, 0, 0, 0, .. profile, .. (profile.Length % 2 == 1 ? new byte[1] : [])];
+        BinaryPrimitives.WriteUInt32LittleEndian(chunk.AsSpan(4), (uint)profile.Length);
+        var vp8x = Vp8x(input);
+        var at = vp8x.Start + vp8x.Length;
+        byte[] output = [.. input[..at], .. chunk, .. input[at..]];
+        output[vp8x.Start + 8] |= 0x20;
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(4), (uint)(output.Length - 8));
+        return output;
+    }
+
+    [Fact] public void IccFlagClearedWhenIccpGoes()
+    {
+        var input = WithMachineIccp();
+        var output = StripWhere(input, f => f.Segment.Label == "ICCP");
+        HasChunk(output, "ICCP").ShouldBeFalse();
+        (Vp8xFlags(output) & 0x20).ShouldBe(0);
+    }
+
     [Fact] public void RiffSizeMatchesLength()
     {
         var output = StripAll("c2pa.webp");
