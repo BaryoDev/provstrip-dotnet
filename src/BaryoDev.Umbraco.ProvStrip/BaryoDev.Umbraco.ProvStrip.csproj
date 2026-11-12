@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>BaryoDev.Umbraco.ProvStrip</PackageId>
+    <Title>ProvStrip for Umbraco</Title>
+    <Description>Checks every image added to the Umbraco media library for AI attribution (C2PA, tool XMP, Software tags) and camera data (EXIF, GPS). Labels it with Delete and Skip, or strips it on upload, and scans the whole library. Cuts bytes, never re-encodes.</Description>
+    <PackageTags>umbraco umbraco-marketplace c2pa provenance exif metadata media</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <!-- Umbraco 17 (LTS) and 18, both on .NET 10. -->
+  <ItemGroup>
+    <PackageReference Include="Umbraco.Cms.Api.Management" VersionOverride="[17.8.1, 19.0.0)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../BaryoDev.ProvStrip/BaryoDev.ProvStrip.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="BaryoDev.Umbraco.ProvStrip.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../icon.png" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

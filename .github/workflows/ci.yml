@@ -46,6 +46,22 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet test provstrip-dotnet.slnx --configuration Release
 
+  # The Umbraco package against each supported Umbraco major. The solution run above uses the default.
+  umbraco:
+    strategy:
+      fail-fast: false
+      matrix:
+        umbraco: [17.8.1, 18.3.1]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.x
+      - env:
+          UMBRACO_VERSION: ${{ matrix.umbraco }}
+        run: dotnet test tests/BaryoDev.Umbraco.ProvStrip.Tests --configuration Release -p:UmbracoVersion="$UMBRACO_VERSION"
+
   pack:
     runs-on: ubuntu-latest
     steps:

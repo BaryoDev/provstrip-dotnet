@@ -6,3 +6,11 @@ artifacts/
 .vs/
 .idea/
 TestResults/
+
+# Umbraco test site runtime files and generated schemas
+umbraco/Data/
+umbraco/Logs/
+umbraco/mediacache/
+appsettings-schema*.json
+umbraco-package-schema.json
+tests/BaryoDev.Umbraco.ProvStrip.TestSite/wwwroot/media/
