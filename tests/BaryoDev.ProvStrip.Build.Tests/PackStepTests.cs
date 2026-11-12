@@ -31,7 +31,7 @@ public class PackStepTests
     static string TaskAssembly()
     {
         var configuration = new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)).Parent!.Name;
-        return Path.Combine(RepoRoot(), "src", "BaryoDev.ProvStrip.Build", "bin", configuration, "net8.0", "BaryoDev.ProvStrip.Build.dll");
+        return Path.Combine(RepoRoot(), "src", "BaryoDev.ProvStrip.Build", "bin", configuration, "net10.0", "BaryoDev.ProvStrip.Build.dll");
     }
 
     static PackRun Pack(string icon, params string[] properties) => Pack(icon, skipIcon: false, properties);
@@ -110,7 +110,7 @@ public class PackStepTests
     // A project with TargetFrameworks packs in the outer build, which imports buildMultiTargeting/, not build/.
     [Theory]
     [InlineData("TargetFramework", "net10.0")]
-    [InlineData("TargetFrameworks", "net8.0;net10.0")]
+    [InlineData("TargetFrameworks", "netstandard2.1;net10.0")]
     public void ConsumerOfThePackageIsChecked(string property, string frameworks)
     {
         var dir = Path.Combine(Path.GetTempPath(), "provstrip-pack", Guid.NewGuid().ToString("N"));

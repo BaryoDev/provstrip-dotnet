@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <PackageId>BaryoDev.ProvStrip</PackageId>
     <Title>ProvStrip</Title>
     <Description>Remove AI attribution (C2PA, XMP, Software tags) and camera data (EXIF, GPS, IPTC) from PNG, JPEG, WebP and SVG by cutting bytes, never re-encoding. Unknown data stops the operation instead of slipping through.</Description>

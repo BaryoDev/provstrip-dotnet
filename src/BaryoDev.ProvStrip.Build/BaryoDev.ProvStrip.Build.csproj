@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <PackageId>BaryoDev.ProvStrip.Build</PackageId>
     <Title>ProvStrip pack step</Title>
     <Description>Checks every image dotnet pack puts in a package, PackageIcon included, for AI attribution and camera data. Fails the pack by default, or strips the packed copy. Never edits source files.</Description>
