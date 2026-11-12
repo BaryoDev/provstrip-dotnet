@@ -44,5 +44,34 @@ public class IccProfileTests
         (IccProfile.FromPayload("png", payload) is null).ShouldBeTrue("a 64 MB profile must be refused, not returned");
     }
 
+    // A tag table whose one entry is "desc" at the given offset and size, followed by the tag bytes.
+    static byte[] ProfileWithDesc(uint offset, uint size, byte[] tag)
+    {
+        var profile = new byte[144 + tag.Length];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(profile.AsSpan(128), 1);
+        "desc"u8.CopyTo(profile.AsSpan(132));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(profile.AsSpan(136), offset);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(profile.AsSpan(140), size);
+        tag.CopyTo(profile.AsSpan(144));
+        return profile;
+    }
+
+    // Offsets and lengths near int.MaxValue used to wrap the bounds checks and escape as ArgumentOutOfRangeException.
+    [Fact] public void DescTagPastIntMaxIsUnreadable() =>
+        IccProfile.Description(ProfileWithDesc(0x40000000, 0x40000000, [])).ShouldBeNull();
+
+    [Fact] public void DescTextLengthPastIntMaxIsUnreadable()
+    {
+        byte[] tag = [.. "desc"u8, 0, 0, 0, 0, 0x7F, 0xFF, 0xFF, 0xF8, (byte)'a', 0, 0, 0];
+        IccProfile.Description(ProfileWithDesc(144, (uint)tag.Length, tag)).ShouldBeNull();
+    }
+
+    [Fact] public void MlucRecordPastIntMaxIsUnreadable()
+    {
+        // mluc, reserved, 1 record, record size 12, "enUS", length 0x20, offset 0x7FFFFFF0
+        byte[] tag = [.. "mluc"u8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 12, .. "enUS"u8, 0, 0, 0, 0x20, 0x7F, 0xFF, 0xFF, 0xF0];
+        IccProfile.Description(ProfileWithDesc(144, (uint)tag.Length, tag)).ShouldBeNull();
+    }
+
     [Fact] public void CorruptZlibIsUnreadable() => IccProfile.FromPayload("png", [.. "icc\0"u8, 0, 1, 2, 3, 4]).ShouldBeNull();
 }

@@ -45,6 +45,16 @@ public class ExifTests
 
     [Fact] public void OffsetOutsidePayloadThrows() => Should.Throw<ProvStripFormatException>(() => Exif.Read(ExifWithIfdOffset(0xFFFF)));
 
+    // Offsets near int.MaxValue used to wrap the bounds check and escape as ArgumentOutOfRangeException.
+    [Fact] public void IfdOffsetNearIntMaxThrows() => Should.Throw<ProvStripFormatException>(() => Exif.Read(ExifWithIfdOffset(0x7FFFFFFE)));
+
+    [Fact] public void ExifIfdOffsetNearIntMaxThrows()
+    {
+        // II*\0, IFD0 at 8, one entry: tag 0x8769 (ExifIFD pointer) LONG 1 = 0x7FFFFFFE, next IFD 0.
+        byte[] tiff = [.. "II*\0"u8, 8, 0, 0, 0, 1, 0, 0x69, 0x87, 4, 0, 1, 0, 0, 0, 0xFE, 0xFF, 0xFF, 0x7F, 0, 0, 0, 0];
+        Should.Throw<ProvStripFormatException>(() => Exif.Read(tiff));
+    }
+
     [Fact] public void NotTiffThrows() => Should.Throw<ProvStripFormatException>(() => Exif.Read("Exif\0\0nope"u8.ToArray()));
 
     [Fact] public void CameraDescription() =>

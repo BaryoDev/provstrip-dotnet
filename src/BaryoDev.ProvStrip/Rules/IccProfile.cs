@@ -14,15 +14,15 @@ internal static class IccProfile
     {
         if (profile.Length < 132) return null;
         var count = BinaryPrimitives.ReadUInt32BigEndian(profile[128..]);
-        for (var i = 0; i < count; i++)
+        for (long i = 0; i < count; i++)
         {
             var entry = 132 + i * 12;
             if (entry + 12 > profile.Length) return null;
-            if (!profile.Slice(entry, 4).SequenceEqual("desc"u8)) continue;
-            var offset = (int)BinaryPrimitives.ReadUInt32BigEndian(profile[(entry + 4)..]);
-            var size = (int)BinaryPrimitives.ReadUInt32BigEndian(profile[(entry + 8)..]);
-            if (offset < 0 || size < 12 || offset + size > profile.Length) return null;
-            return ReadText(profile.Slice(offset, size));
+            if (!profile.Slice((int)entry, 4).SequenceEqual("desc"u8)) continue;
+            long offset = BinaryPrimitives.ReadUInt32BigEndian(profile[(int)(entry + 4)..]);
+            long size = BinaryPrimitives.ReadUInt32BigEndian(profile[(int)(entry + 8)..]);
+            if (size < 12 || offset + size > profile.Length) return null;
+            return ReadText(profile.Slice((int)offset, (int)size));
         }
         return null;
     }
@@ -71,18 +71,18 @@ internal static class IccProfile
     {
         if (tag[..4].SequenceEqual("desc"u8))
         {
-            var length = (int)BinaryPrimitives.ReadUInt32BigEndian(tag[8..]);
-            if (length <= 0 || 12 + length > tag.Length) return null;
-            return Encoding.ASCII.GetString(tag.Slice(12, length)).TrimEnd('\0');
+            long length = BinaryPrimitives.ReadUInt32BigEndian(tag[8..]);
+            if (length == 0 || 12 + length > tag.Length) return null;
+            return Encoding.ASCII.GetString(tag.Slice(12, (int)length)).TrimEnd('\0');
         }
         if (tag[..4].SequenceEqual("mluc"u8) && tag.Length >= 28)
         {
             var records = BinaryPrimitives.ReadUInt32BigEndian(tag[8..]);
             if (records == 0) return null;
-            var length = (int)BinaryPrimitives.ReadUInt32BigEndian(tag[20..]);
-            var offset = (int)BinaryPrimitives.ReadUInt32BigEndian(tag[24..]);
-            if (offset < 0 || length < 0 || offset + length > tag.Length) return null;
-            return Encoding.BigEndianUnicode.GetString(tag.Slice(offset, length)).TrimEnd('\0');
+            long length = BinaryPrimitives.ReadUInt32BigEndian(tag[20..]);
+            long offset = BinaryPrimitives.ReadUInt32BigEndian(tag[24..]);
+            if (offset + length > tag.Length) return null;
+            return Encoding.BigEndianUnicode.GetString(tag.Slice((int)offset, (int)length)).TrimEnd('\0');
         }
         return null;
     }

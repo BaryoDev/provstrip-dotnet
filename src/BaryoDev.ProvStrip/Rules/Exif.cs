@@ -21,11 +21,11 @@ internal static class Exif
         bool gps = false, model = false, date = false;
         uint exifIfd = 0;
 
-        var count = ReadU16(tiff, (int)ifd0, big);
-        var entries = (int)ifd0 + 2;
+        var count = ReadU16(tiff, ifd0, big);
+        var entries = ifd0 + 2L;
         for (var i = 0; i < count; i++)
         {
-            var at = entries + i * 12;
+            var at = entries + i * 12L;
             var tag = ReadU16(tiff, at, big);
             switch (tag)
             {
@@ -36,13 +36,13 @@ internal static class Exif
                 case 0x8769: exifIfd = ReadU32(tiff, at + 8, big); break;
             }
         }
-        var next = ReadU32(tiff, entries + count * 12, big);
+        var next = ReadU32(tiff, entries + count * 12L, big);
 
         if (exifIfd != 0)
         {
-            var n = ReadU16(tiff, (int)exifIfd, big);
+            var n = ReadU16(tiff, exifIfd, big);
             for (var i = 0; i < n; i++)
-                if (ReadU16(tiff, (int)exifIfd + 2 + i * 12, big) is 0x9003 or 0x9004) date = true;
+                if (ReadU16(tiff, exifIfd + 2L + i * 12L, big) is 0x9003 or 0x9004) date = true;
         }
 
         var only = count == 1 && orientation is not null && next == 0;
@@ -94,16 +94,19 @@ internal static class Exif
         throw new ProvStripFormatException("EXIF block has no TIFF header", 0);
     }
 
-    static ushort ReadU16(ReadOnlySpan<byte> b, int at, bool big)
+    // Offsets are long so an offset near uint.MaxValue cannot wrap the bounds check.
+    static ushort ReadU16(ReadOnlySpan<byte> b, long at, bool big)
     {
-        if (at < 0 || at + 2 > b.Length) throw new ProvStripFormatException("EXIF offset points outside the block", at);
-        return big ? BinaryPrimitives.ReadUInt16BigEndian(b[at..]) : BinaryPrimitives.ReadUInt16LittleEndian(b[at..]);
+        if (at < 0 || at + 2 > b.Length) throw new ProvStripFormatException("EXIF offset points outside the block", (int)Math.Clamp(at, 0, int.MaxValue));
+        var s = b[(int)at..];
+        return big ? BinaryPrimitives.ReadUInt16BigEndian(s) : BinaryPrimitives.ReadUInt16LittleEndian(s);
     }
 
-    static uint ReadU32(ReadOnlySpan<byte> b, int at, bool big)
+    static uint ReadU32(ReadOnlySpan<byte> b, long at, bool big)
     {
-        if (at < 0 || at + 4 > b.Length) throw new ProvStripFormatException("EXIF offset points outside the block", at);
-        return big ? BinaryPrimitives.ReadUInt32BigEndian(b[at..]) : BinaryPrimitives.ReadUInt32LittleEndian(b[at..]);
+        if (at < 0 || at + 4 > b.Length) throw new ProvStripFormatException("EXIF offset points outside the block", (int)Math.Clamp(at, 0, int.MaxValue));
+        var s = b[(int)at..];
+        return big ? BinaryPrimitives.ReadUInt32BigEndian(s) : BinaryPrimitives.ReadUInt32LittleEndian(s);
     }
 
     static void Write16(byte[] b, int at, ushort v, bool big)
