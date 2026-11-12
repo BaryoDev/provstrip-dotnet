@@ -4,13 +4,32 @@ namespace BaryoDev.ProvStrip.Formats;
 
 /// <summary>
 /// A text scanner over the SVG's UTF-8 bytes, not a DOM, so nothing is reformatted. It knows comments, CDATA,
-/// processing instructions, declarations and quoted attribute values, so markers inside them are not taken for tags.
-/// Segments are metadata elements, elements and attributes in the c2pa, inkscape and sodipodi namespaces, their
-/// xmlns declarations (labelled "prefix:xmlns") and comments. Segments may nest.
+/// processing instructions, the doctype and quoted attribute values, so markers inside them are not taken for tags.
+/// Names are resolved through the xmlns declarations in scope, so a namespace is known by its URI, not its prefix.
 /// </summary>
+/// <remarks>
+/// Segments: metadata elements; elements and attributes in the C2PA, Inkscape and Sodipodi namespaces (labelled
+/// with that namespace's usual prefix) and their xmlns declarations (labelled "prefix:xmlns"); elements, attributes
+/// and declarations in any other namespace except SVG, XLink and XML, as written (no rule names them, so they are
+/// unknown); comments; processing instructions other than the XML declaration ("#pi"); and a doctype with an
+/// internal subset ("#doctype"), which can define entities this scanner does not expand, so it cannot be dropped.
+/// Inside a segment element, only the known namespaces make segments of their own.
+/// </remarks>
 internal sealed class SvgContainer : IContainer
 {
-    static readonly string[] Prefixes = ["c2pa", "inkscape", "sodipodi"];
+    static readonly Dictionary<string, string> Known = new(StringComparer.Ordinal)
+    {
+        ["http://c2pa.org/manifest"] = "c2pa",
+        ["http://www.inkscape.org/namespaces/inkscape"] = "inkscape",
+        ["http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"] = "sodipodi",
+    };
+
+    static readonly HashSet<string> Plain = new(StringComparer.Ordinal)
+    {
+        "http://www.w3.org/2000/svg", "http://www.w3.org/1999/xlink", "http://www.w3.org/XML/1998/namespace",
+    };
+
+    sealed record Open(string Name, int Start, string? Label, Dictionary<string, string> Scope);
 
     public string Format => "svg";
 
@@ -20,7 +39,8 @@ internal sealed class SvgContainer : IContainer
     {
         var b = memory.Span;
         var segments = new List<Segment>();
-        var open = new List<(string Name, int Start, string? Label)>();
+        var open = new List<Open>();
+        var labelledOpen = 0;
         var i = 0;
         while (true)
         {
@@ -35,24 +55,35 @@ internal sealed class SvgContainer : IContainer
                 i = end;
             }
             else if (b[i..].StartsWith("<![CDATA["u8)) i = After(b, i + 9, "]]>"u8, "unclosed CDATA section", i);
-            else if (b[i..].StartsWith("<?"u8)) i = After(b, i + 2, "?>"u8, "unclosed processing instruction", i);
-            else if (b[i..].StartsWith("<!"u8)) i = SkipDeclaration(b, i);
-            else if (b[i..].StartsWith("</"u8)) i = CloseTag(b, i, open, segments);
-            else i = OpenTag(b, i, open, segments);
+            else if (b[i..].StartsWith("<?"u8))
+            {
+                var end = After(b, i + 2, "?>"u8, "unclosed processing instruction", i);
+                if (!IsXmlDeclaration(b[(i + 2)..])) segments.Add(new Segment(i, end - i, "#pi"));
+                i = end;
+            }
+            else if (b[i..].StartsWith("<!DOCTYPE"u8))
+            {
+                var (end, subset) = SkipDoctype(b, i);
+                if (subset) segments.Add(new Segment(i, end - i, "#doctype"));
+                i = end;
+            }
+            else if (b[i..].StartsWith("<!"u8)) throw new ProvStripFormatException("unexpected declaration", i);
+            else if (b[i..].StartsWith("</"u8)) i = CloseTag(b, i, open, segments, ref labelledOpen);
+            else i = OpenTag(b, i, open, segments, ref labelledOpen);
         }
 
-        foreach (var o in open)
-            if (o.Label is not null) throw new ProvStripFormatException($"unclosed <{o.Name}> element", o.Start);
+        if (open.Count > 0) throw new ProvStripFormatException($"unclosed <{open[^1].Name}> element", open[^1].Start);
         return segments.OrderBy(s => s.Start).ToList();
     }
 
-    static int OpenTag(ReadOnlySpan<byte> b, int i, List<(string Name, int Start, string? Label)> open, List<Segment> segments)
+    static int OpenTag(ReadOnlySpan<byte> b, int i, List<Open> open, List<Segment> segments, ref int labelledOpen)
     {
         var j = i + 1;
         while (j < b.Length && !IsSpace(b[j]) && b[j] is not ((byte)'>' or (byte)'/')) j++;
         var name = Encoding.UTF8.GetString(b[(i + 1)..j]);
         if (name.Length == 0) throw new ProvStripFormatException("malformed tag", i);
 
+        var attributes = new List<(string Name, string Value, int Start, int End)>();
         var selfClosing = false;
         while (true)
         {
@@ -74,51 +105,121 @@ internal sealed class SvgContainer : IContainer
                 throw new ProvStripFormatException($"attribute {attribute} is not quoted", j);
             var close = b[(j + 1)..].IndexOf(b[j]);
             if (close < 0) throw new ProvStripFormatException($"unclosed value for {attribute}", j);
+            var value = Encoding.UTF8.GetString(b.Slice(j + 1, close));
             j += close + 2;
-
-            if (AttributeLabel(attribute) is { } label) segments.Add(new Segment(spaceStart, j - spaceStart, label));
+            attributes.Add((attribute, value, spaceStart, j));
         }
 
-        var elementLabel = ElementLabel(name);
+        // This element's own declarations apply to its name and its attributes.
+        var scope = open.Count > 0 ? open[^1].Scope : new Dictionary<string, string>(StringComparer.Ordinal);
+        if (attributes.Any(a => a.Name == "xmlns" || a.Name.StartsWith("xmlns:", StringComparison.Ordinal)))
+        {
+            scope = new Dictionary<string, string>(scope, StringComparer.Ordinal);
+            foreach (var a in attributes)
+                if (a.Name == "xmlns") scope[""] = a.Value;
+                else if (a.Name.StartsWith("xmlns:", StringComparison.Ordinal)) scope[a.Name[6..]] = a.Value;
+        }
+
+        var insideLabelled = labelledOpen > 0;
+        var elementLabel = ElementLabel(name, scope, insideLabelled);
+        foreach (var a in attributes)
+            if (AttributeLabel(a.Name, a.Value, scope, insideLabelled || elementLabel is not null) is { } label)
+                segments.Add(new Segment(a.Start, a.End - a.Start, label));
+
         if (selfClosing)
         {
             if (elementLabel is not null) segments.Add(new Segment(i, j - i, elementLabel));
         }
-        else open.Add((name, i, elementLabel));
+        else
+        {
+            open.Add(new Open(name, i, elementLabel, scope));
+            if (elementLabel is not null) labelledOpen++;
+        }
         return j;
     }
 
-    static int CloseTag(ReadOnlySpan<byte> b, int i, List<(string Name, int Start, string? Label)> open, List<Segment> segments)
+    static int CloseTag(ReadOnlySpan<byte> b, int i, List<Open> open, List<Segment> segments, ref int labelledOpen)
     {
         var gt = b[i..].IndexOf((byte)'>');
         if (gt < 0) throw new ProvStripFormatException("unclosed end tag", i);
         var end = i + gt + 1;
         var name = Encoding.UTF8.GetString(b[(i + 2)..(end - 1)]).Trim();
 
-        var k = open.FindLastIndex(o => o.Name == name);
-        if (k < 0) return end;
-        for (var n = open.Count - 1; n > k; n--)
-            if (open[n].Label is not null) throw new ProvStripFormatException($"unclosed <{open[n].Name}> element", open[n].Start);
-        if (open[k].Label is { } label) segments.Add(new Segment(open[k].Start, end - open[k].Start, label));
-        open.RemoveRange(k, open.Count - k);
+        if (open.Count == 0 || open[^1].Name != name)
+            throw new ProvStripFormatException(
+                open.Count == 0 ? $"</{name}> closes nothing" : $"</{name}> does not close <{open[^1].Name}>", i);
+        var top = open[^1];
+        open.RemoveAt(open.Count - 1);
+        if (top.Label is { } label)
+        {
+            segments.Add(new Segment(top.Start, end - top.Start, label));
+            labelledOpen--;
+        }
         return end;
     }
 
-    // A doctype may hold an internal subset in brackets, and quoted strings that contain '>'.
-    static int SkipDeclaration(ReadOnlySpan<byte> b, int i)
+    static string? Resolve(string? prefix, Dictionary<string, string> scope) =>
+        prefix == "xml" ? "http://www.w3.org/XML/1998/namespace" : scope.GetValueOrDefault(prefix ?? "");
+
+    static (string? Prefix, string Local) Split(string name) =>
+        name.IndexOf(':') is var colon and > 0 ? (name[..colon], name[(colon + 1)..]) : (null, name);
+
+    // Known namespaces are labelled with their usual prefix whatever prefix the file uses. An unbound c2pa,
+    // inkscape or sodipodi prefix is taken at its word. Other namespaces are labelled as written.
+    static string? NamespaceLabel(string name, string? uri, string? prefix, string local, bool insideLabelled)
     {
+        if (uri is not null && Known.TryGetValue(uri, out var known)) return $"{known}:{local}";
+        if (uri is null && prefix is not null && Known.ContainsValue(prefix)) return name;
+        if (uri is null || Plain.Contains(uri)) return null;
+        if (insideLabelled) return null;
+        // A known prefix bound to some other URI must not be matched by that prefix's rules.
+        return prefix is not null && Known.ContainsValue(prefix) ? $"{{{uri}}}{local}" : name;
+    }
+
+    static string? ElementLabel(string name, Dictionary<string, string> scope, bool insideLabelled)
+    {
+        var (prefix, local) = Split(name);
+        var uri = Resolve(prefix, scope);
+        if (local == "metadata" && (uri is null || uri == "http://www.w3.org/2000/svg")) return "metadata";
+        return NamespaceLabel(name, uri, prefix, local, insideLabelled);
+    }
+
+    static string? AttributeLabel(string name, string value, Dictionary<string, string> scope, bool insideLabelled)
+    {
+        if (name == "xmlns") return null;
+        if (name.StartsWith("xmlns:", StringComparison.Ordinal))
+        {
+            if (Known.TryGetValue(value, out var known)) return $"{known}:xmlns";
+            if (Plain.Contains(value) || insideLabelled) return null;
+            return Known.ContainsValue(name[6..]) ? $"{{{value}}}xmlns" : name;
+        }
+        var (prefix, local) = Split(name);
+        if (prefix is null) return null;
+        return NamespaceLabel(name, Resolve(prefix, scope), prefix, local, insideLabelled);
+    }
+
+    static bool IsXmlDeclaration(ReadOnlySpan<byte> afterOpen) =>
+        afterOpen.StartsWith("xml"u8) && afterOpen.Length > 3 && (IsSpace(afterOpen[3]) || afterOpen[3] == '?');
+
+    // The doctype may hold an internal subset in brackets, with comments, processing instructions and quoted
+    // strings inside it that can contain any of [ ] > ' ".
+    static (int End, bool Subset) SkipDoctype(ReadOnlySpan<byte> b, int i)
+    {
+        var subset = false;
         var depth = 0;
         byte quote = 0;
-        for (var j = i + 2; j < b.Length; j++)
+        for (var j = i + 9; j < b.Length; j++)
         {
             var c = b[j];
             if (quote != 0) { if (c == quote) quote = 0; continue; }
+            if (depth > 0 && b[j..].StartsWith("<!--"u8)) { j = After(b, j + 4, "-->"u8, "unclosed comment in doctype", j) - 1; continue; }
+            if (depth > 0 && b[j..].StartsWith("<?"u8)) { j = After(b, j + 2, "?>"u8, "unclosed instruction in doctype", j) - 1; continue; }
             if (c is (byte)'"' or (byte)'\'') quote = c;
-            else if (c == '[') depth++;
+            else if (c == '[') { depth++; subset = true; }
             else if (c == ']') depth--;
-            else if (c == '>' && depth <= 0) return j + 1;
+            else if (c == '>' && depth <= 0) return (j + 1, subset);
         }
-        throw new ProvStripFormatException("unclosed declaration", i);
+        throw new ProvStripFormatException("unclosed doctype", i);
     }
 
     static int After(ReadOnlySpan<byte> b, int from, ReadOnlySpan<byte> close, string error, int start)
@@ -130,25 +231,9 @@ internal sealed class SvgContainer : IContainer
 
     static bool IsSpace(byte c) => c is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n';
 
-    static string? Prefix(string name) => name.IndexOf(':') is var colon and > 0 ? name[..colon] : null;
-
-    static string? ElementLabel(string name)
-    {
-        var prefix = Prefix(name);
-        if (prefix is not null && Prefixes.Contains(prefix)) return name;
-        return name == "metadata" || name.EndsWith(":metadata", StringComparison.Ordinal) ? "metadata" : null;
-    }
-
-    static string? AttributeLabel(string name)
-    {
-        if (name.StartsWith("xmlns:", StringComparison.Ordinal))
-            return Prefixes.Contains(name[6..]) ? $"{name[6..]}:xmlns" : null;
-        return Prefix(name) is { } prefix && Prefixes.Contains(prefix) ? name : null;
-    }
-
     public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) => false;
 
-    public bool IsSafeToDrop(Segment segment) => true;
+    public bool IsSafeToDrop(Segment segment) => segment.Label != "#doctype";
 
     // A comment no rule names is ordinary text, not an unknown.
     public bool KeepsUnmatched(Segment segment) => segment.Label == "#comment";

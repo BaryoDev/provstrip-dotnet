@@ -25,12 +25,27 @@ public static class FormatDetector
         while (true)
         {
             while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
-            if (Skip(text, ref i, "<?", "?>") || Skip(text, ref i, "<!--", "-->") || Skip(text, ref i, "<!DOCTYPE", ">"))
+            if (Skip(text, ref i, "<?", "?>") || Skip(text, ref i, "<!--", "-->") || SkipDoctype(text, ref i))
                 continue;
             break;
         }
         return text.AsSpan(i).StartsWith("<svg") && i + 4 <= text.Length
             && (i + 4 == text.Length || !char.IsLetterOrDigit(text[i + 4]));
+    }
+
+    // A doctype's internal subset is in brackets and holds '>' of its own.
+    static bool SkipDoctype(string text, ref int i)
+    {
+        if (!text.AsSpan(i).StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)) return false;
+        var gt = text.IndexOf('>', i);
+        var open = text.IndexOf('[', i);
+        if (open >= 0 && (gt < 0 || open < gt))
+        {
+            var close = text.IndexOf("]", open, StringComparison.Ordinal);
+            gt = close < 0 ? -1 : text.IndexOf('>', close);
+        }
+        i = gt < 0 ? text.Length : gt + 1;
+        return true;
     }
 
     static bool Skip(string text, ref int i, string open, string close)

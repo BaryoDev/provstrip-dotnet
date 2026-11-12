@@ -85,4 +85,51 @@ public class SvgContainerTests
     [Fact] public void SelfClosingMetadataIsOneSegment() =>
         Svg.ReadSegments("<svg><metadata/></svg>"u8.ToArray()).ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             s => s.Label.ShouldBe("metadata"), s => s.Start.ShouldBe(5), s => s.Length.ShouldBe(11));
+
+    static IReadOnlyList<Finding> Find(string svg) => ProvStripEngine.Inspect(Encoding.UTF8.GetBytes(svg)).Findings;
+
+    const string SvgNs = "xmlns=\"http://www.w3.org/2000/svg\"";
+
+    [Fact] public void AnyPrefixBoundToTheC2paNamespaceIsFound() =>
+        Find($"""<svg {SvgNs} xmlns:x="http://c2pa.org/manifest"><x:manifest>abc</x:manifest></svg>""")
+            .ShouldContain(f => f.Segment.Label == "c2pa:manifest" && f.Category == Category.Provenance);
+
+    [Fact] public void DefaultNamespaceC2paIsFound() =>
+        Find($"""<svg {SvgNs}><manifest xmlns="http://c2pa.org/manifest">abc</manifest></svg>""")
+            .ShouldContain(f => f.Segment.Label == "c2pa:manifest" && f.Category == Category.Provenance);
+
+    [Fact] public void ThePrefixC2paBoundElsewhereIsNotTrustedByName() =>
+        Find($"""<svg {SvgNs} xmlns:c2pa="http://example.com/other"><c2pa:x/></svg>""")
+            .ShouldAllBe(f => f.Category == Category.Unknown);
+
+    [Fact] public void AnotherNamespaceIsAnUnknownThatCanGo()
+    {
+        var input = Encoding.UTF8.GetBytes($"""<svg {SvgNs} xmlns:sketch="http://www.bohemiancoding.com/sketch/ns"><g sketch:type="MSPage"/></svg>""");
+        var findings = ProvStripEngine.Inspect(input).Findings;
+        findings.Select(f => f.Segment.Label).ShouldBe(["xmlns:sketch", "sketch:type"], ignoreOrder: true);
+        findings.ShouldAllBe(f => f.Category == Category.Unknown && f.CanDelete);
+        Text(ProvStripEngine.Strip(input, findings).Output).ShouldBe($"""<svg {SvgNs}><g/></svg>""");
+    }
+
+    [Fact] public void XlinkAndXmlAttributesAreKept() =>
+        Find($"""<svg {SvgNs} xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve"><use xlink:href="#a"/></svg>""").ShouldBeEmpty();
+
+    [Fact] public void NamespacesInsideMetadataAreNotSeparateFindings() =>
+        Find($"""<svg {SvgNs}><metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/></metadata></svg>""")
+            .ShouldHaveSingleItem().Segment.Label.ShouldBe("metadata");
+
+    [Fact] public void InternalDtdSubsetIsAnUnknownThatStays() =>
+        Find($"""<!DOCTYPE svg [<!ENTITY a "x">]><svg {SvgNs}>&a;</svg>""").ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            f => f.Segment.Label.ShouldBe("#doctype"), f => f.Category.ShouldBe(Category.Unknown), f => f.CanDelete.ShouldBeFalse());
+
+    [Fact] public void ApostropheInASubsetCommentDoesNotHideTags() =>
+        Find($"""<!DOCTYPE svg [<!-- it's -->]><svg {SvgNs}><metadata/></svg>""").Select(f => f.Segment.Label)
+            .ShouldBe(["#doctype", "metadata"], ignoreOrder: true);
+
+    [Fact] public void StylesheetInstructionIsAnUnknown() =>
+        Find($"""<?xml version="1.0"?><?xml-stylesheet href="a.css"?><svg {SvgNs}/>""").ShouldHaveSingleItem()
+            .ShouldSatisfyAllConditions(f => f.Segment.Label.ShouldBe("#pi"), f => f.CanDelete.ShouldBeTrue());
+
+    [Fact] public void MismatchedEndTagThrows() =>
+        Should.Throw<ProvStripFormatException>(() => Find($"""<svg {SvgNs}><g></svg>"""));
 }
