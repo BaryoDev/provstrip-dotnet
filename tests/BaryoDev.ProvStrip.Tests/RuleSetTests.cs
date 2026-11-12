@@ -100,19 +100,40 @@ public class RuleSetTests
             .ShouldBe(new RuleOutcome.Match(Category.Provenance, "svg-generator", "generator comment"));
     }
 
-    // EXIF 0x0131 Software names the program that wrote the file.
-    [Fact] public void ExifSoftwareTagIsProvenance()
+    // A little-endian TIFF block with one IFD of ASCII entries, values inline when they fit in four bytes.
+    static byte[] ExifAscii(params (ushort Tag, string Value)[] entries)
     {
-        byte[] tiff = [.. "II*\0"u8, 8, 0, 0, 0, 1, 0, 0x31, 0x01, 2, 0, 5, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0, .. "Tool\0"u8];
-        RuleSet.Default.Classify("webp", new Segment(0, tiff.Length, "EXIF"), tiff)
-            .ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag"));
+        var values = entries.Select(e => Encoding.ASCII.GetBytes(e.Value + "\0")).ToArray();
+        var ifdEnd = 8 + 2 + entries.Length * 12 + 4;
+        var tiff = new List<byte>([.. "II*\0"u8, 8, 0, 0, 0, (byte)entries.Length, 0]);
+        var extra = new List<byte>();
+        for (var i = 0; i < entries.Length; i++)
+        {
+            tiff.AddRange(BitConverter.GetBytes(entries[i].Tag));
+            tiff.AddRange([2, 0]);
+            tiff.AddRange(BitConverter.GetBytes((uint)values[i].Length));
+            if (values[i].Length <= 4) tiff.AddRange([.. values[i], .. new byte[4 - values[i].Length]]);
+            else { tiff.AddRange(BitConverter.GetBytes((uint)(ifdEnd + extra.Count))); extra.AddRange(values[i]); }
+        }
+        tiff.AddRange([0, 0, 0, 0]);
+        return [.. tiff, .. extra];
     }
 
+    static RuleOutcome ClassifyExif(byte[] tiff) => RuleSet.Default.Classify("webp", new Segment(0, tiff.Length, "EXIF"), tiff);
+
+    // Phones fill Software with an OS version. That is camera data, not AI attribution.
+    [Fact] public void PhoneOsVersionInSoftwareIsCameraData() =>
+        ClassifyExif(ExifAscii((0x0110, "iPhone 15"), (0x0131, "17.4.1"))).ShouldBe(new RuleOutcome.Match(Category.Camera, "webp-exif", "camera model"));
+
+    [Fact] public void ShortSoftwareValueAloneIsCameraData() =>
+        ClassifyExif(ExifAscii((0x0131, "1.0"))).ShouldBe(new RuleOutcome.Match(Category.Camera, "webp-exif", "EXIF"));
+
+    // Software that names an AI tool or an editor is provenance.
+    [Theory, InlineData("Adobe Photoshop 25.0 (Macintosh)"), InlineData("Midjourney"), InlineData("ComfyUI")]
+    public void ToolInSoftwareIsProvenance(string software) =>
+        ClassifyExif(ExifAscii((0x0131, software))).ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag"));
+
     // The block goes as provenance, but the report still names the camera data riding in it.
-    [Fact] public void ExifSoftwareWithCameraDataNamesBoth()
-    {
-        byte[] tiff = [.. "II*\0"u8, 8, 0, 0, 0, 2, 0, 0x10, 0x01, 2, 0, 4, 0, 0, 0, .. "Cam\0"u8, 0x31, 0x01, 2, 0, 4, 0, 0, 0, .. "App\0"u8, 0, 0, 0, 0];
-        RuleSet.Default.Classify("webp", new Segment(0, tiff.Length, "EXIF"), tiff)
-            .ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag, camera model"));
-    }
+    [Fact] public void ToolSoftwareWithCameraDataNamesBoth() =>
+        ClassifyExif(ExifAscii((0x0110, "Cam"), (0x0131, "Adobe Lightroom"))).ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag, camera model"));
 }

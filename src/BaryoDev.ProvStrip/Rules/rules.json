@@ -1,5 +1,6 @@
 {
   "provenanceMarkers": ["c2pa", "jumd", "claim_generator", "contentcredentials", "CreatorTool", "softwareAgent", "anthropic", "trainedAlgorithmicMedia", "algorithmicMedia", "compositeSynthetic"],
+  "softwareTools": ["Adobe", "Photoshop", "Lightroom", "Firefly", "Midjourney", "DALL-E", "OpenAI", "ChatGPT", "Stable Diffusion", "ComfyUI", "Automatic1111", "InvokeAI", "Fooocus", "Leonardo", "Ideogram", "Gemini", "Imagen", "Canva", "GIMP", "Affinity", "Pixelmator", "Krita", "Picsart", "Luminar", "Topaz"],
   "standardIccDescriptions": ["sRGB IEC61966-2.1", "sRGB", "Display P3", "Adobe RGB (1998)", "ProPhoto RGB", "Generic Gray Profile", "Generic Gray Gamma 2.2 Profile", "Rec. 2020", "ITU-R BT.2020"],
   "rules": [
     { "id": "png-cabx",          "format": "png",  "label": "caBX",              "category": "provenance", "describe": "C2PA" },

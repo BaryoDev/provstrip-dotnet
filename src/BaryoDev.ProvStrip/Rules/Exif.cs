@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace BaryoDev.ProvStrip.Rules;
 
 internal sealed record ExifSummary(ushort? Orientation, bool HasGps, bool HasCameraModel, bool HasDateTaken, bool OnlyOrientation,
-    bool HasSoftware = false);
+    string? Software = null);
 
 /// <summary>Reads just enough of an EXIF (TIFF) block to describe it and to keep orientation.</summary>
 internal static class Exif
@@ -19,7 +19,8 @@ internal static class Exif
         var ifd0 = ReadU32(tiff, 4, big);
 
         ushort? orientation = null;
-        bool gps = false, model = false, date = false, software = false;
+        bool gps = false, model = false, date = false;
+        string? software = null;
         uint exifIfd = 0;
 
         var count = ReadU16(tiff, ifd0, big);
@@ -33,7 +34,7 @@ internal static class Exif
                 case OrientationTag: orientation = ReadU16(tiff, at + 8, big); break;
                 case 0x010F or 0x0110: model = true; break;
                 case 0x0132: date = true; break;
-                case 0x0131: software = true; break;
+                case 0x0131: software = ReadAscii(tiff, at, big); break;
                 case 0x8825: gps = true; break;
                 case 0x8769: exifIfd = ReadU32(tiff, at + 8, big); break;
             }
@@ -76,10 +77,10 @@ internal static class Exif
     }
 
     /// <summary>What the block holds, for a label: "GPS, camera model, date taken".</summary>
-    public static string Describe(ExifSummary s)
+    public static string Describe(ExifSummary s, bool softwareNamesATool = false)
     {
         var parts = new List<string>(4);
-        if (s.HasSoftware) parts.Add("Software tag");
+        if (softwareNamesATool) parts.Add("Software tag");
         if (s.HasGps) parts.Add("GPS");
         if (s.HasCameraModel) parts.Add("camera model");
         if (s.HasDateTaken) parts.Add("date taken");
@@ -98,6 +99,16 @@ internal static class Exif
     }
 
     // Offsets are long so an offset near uint.MaxValue cannot wrap the bounds check.
+    // An ASCII entry's value: inline when it fits in four bytes, else at the offset. Null when the type is not ASCII.
+    static string? ReadAscii(ReadOnlySpan<byte> tiff, long entry, bool big)
+    {
+        if (ReadU16(tiff, entry + 2, big) != 2) return null;
+        long count = ReadU32(tiff, entry + 4, big);
+        long start = count <= 4 ? entry + 8 : ReadU32(tiff, entry + 8, big);
+        if (start + count > tiff.Length) throw new ProvStripFormatException("EXIF offset points outside the block", (int)Math.Clamp(start, 0, int.MaxValue));
+        return System.Text.Encoding.Latin1.GetString(tiff.Slice((int)start, (int)count)).TrimEnd('\0');
+    }
+
     static ushort ReadU16(ReadOnlySpan<byte> b, long at, bool big)
     {
         if (at < 0 || at + 2 > b.Length) throw new ProvStripFormatException("EXIF offset points outside the block", (int)Math.Clamp(at, 0, int.MaxValue));

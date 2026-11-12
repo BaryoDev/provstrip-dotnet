@@ -18,7 +18,7 @@ Findings come in three categories, and each category is handled on its own.
 | --- | --- | --- |
 | AI and tool provenance | C2PA manifests | PNG `caBX`, JPEG APP11 (JUMBF), WebP `C2PA`, SVG `<c2pa:manifest>` |
 | | XMP that names a tool (`CreatorTool`, `softwareAgent`, C2PA markers) or gives an IPTC digital source type of generated media (`trainedAlgorithmicMedia`, `algorithmicMedia`, `compositeSynthetic`) | PNG `iTXt`, JPEG APP1, WebP `XMP `, SVG `<metadata>` |
-| | Software and generator text | PNG `tEXt`/`zTXt`/`iTXt` (`Software`, and the `parameters`, `prompt` and `workflow` keys image generators write), EXIF `Software`, SVG generator comments |
+| | Software and generator text | PNG `tEXt`/`zTXt`/`iTXt` (`Software`, and the `parameters`, `prompt` and `workflow` keys image generators write), EXIF `Software` when it names a tool from `softwareTools` (a phone's OS version stays camera data), SVG generator comments |
 | | Editor data | SVG `inkscape:` and `sodipodi:` elements, attributes and namespace declarations |
 | Camera data | EXIF: camera model, date taken, GPS | JPEG APP1, PNG `eXIf`, WebP `EXIF` |
 | | IPTC and comments | JPEG APP13 and COM |
@@ -140,6 +140,7 @@ A new marker inside a format already parsed is a rules edit, not a code change. 
 ```json
 {
   "provenanceMarkers": ["c2pa", "CreatorTool", "softwareAgent"],
+  "softwareTools": ["Adobe", "Midjourney", "ComfyUI"],
   "standardIccDescriptions": ["sRGB IEC61966-2.1", "Display P3"],
   "rules": [
     { "id": "png-cabx", "format": "png", "label": "caBX", "category": "provenance", "describe": "C2PA" },
@@ -157,6 +158,9 @@ A new marker inside a format already parsed is a rules edit, not a code change. 
 | `contains` | Optional. The rule matches only when the segment contains one of these strings. |
 | `category` and `describe` | `provenance` or `camera`, and the text shown to people |
 | `classify` | Instead of a category: `xmp` (provenance when it names a tool), `exif` (camera, orientation kept) or `icc` (kept when standard) |
+
+`provenanceMarkers` make XMP provenance when it contains one. `softwareTools` make an EXIF `Software` value
+provenance when it contains one, so a phone's OS version there stays camera data.
 
 The first rule that matches wins. A segment no rule matches and no format keeps is unknown.
 

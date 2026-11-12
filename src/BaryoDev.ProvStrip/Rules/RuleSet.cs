@@ -23,11 +23,15 @@ public sealed class RuleSet
 
     internal IReadOnlyList<string> StandardIccDescriptions { get; }
 
-    RuleSet(IReadOnlyList<Rule> rules, IReadOnlyList<string> markers, IReadOnlyList<string> icc)
+    /// <summary>Names in an EXIF Software value that make it provenance. Anything else, such as a phone's OS version, is camera data.</summary>
+    internal IReadOnlyList<string> SoftwareTools { get; }
+
+    RuleSet(IReadOnlyList<Rule> rules, IReadOnlyList<string> markers, IReadOnlyList<string> icc, IReadOnlyList<string> tools)
     {
         this.rules = rules;
         ProvenanceMarkers = markers;
         StandardIccDescriptions = icc;
+        SoftwareTools = tools;
     }
 
     /// <summary>The rules built into the package.</summary>
@@ -79,7 +83,7 @@ public sealed class RuleSet
             parsed.Add(new Rule(r.Id, r.Format, r.Label.Split('|'), r.Keyword, r.Contains ?? [], category, r.Describe, classify));
         }
 
-        return new RuleSet(parsed, file.ProvenanceMarkers ?? [], file.StandardIccDescriptions ?? []);
+        return new RuleSet(parsed, file.ProvenanceMarkers ?? [], file.StandardIccDescriptions ?? [], file.SoftwareTools ?? []);
     }
 
     internal RuleOutcome Classify(string format, Segment segment, ReadOnlySpan<byte> payload)
@@ -108,15 +112,19 @@ public sealed class RuleSet
     internal bool IsExifRule(string ruleId) =>
         rules.Any(r => r.Classify == Classifier.Exif && string.Equals(r.Id, ruleId, StringComparison.Ordinal));
 
-    static RuleOutcome ClassifyExif(Rule rule, ReadOnlySpan<byte> payload)
+    bool NamesATool(string? software) =>
+        software is not null && (SoftwareTools.Concat(ProvenanceMarkers).Any(t => software.Contains(t, StringComparison.OrdinalIgnoreCase)));
+
+    RuleOutcome ClassifyExif(Rule rule, ReadOnlySpan<byte> payload)
     {
         var summary = Exif.Read(payload);
         // Kept only when it is exactly what a strip would write, so no bytes can ride along unread.
         return summary.OnlyOrientation && Exif.OrientationOnly(payload) is { } canonical && payload.SequenceEqual(canonical)
             ? RuleOutcome.Keep
-            // A Software tag names the program that wrote the file, so the block is provenance, as a mixed XMP packet is.
-            : summary.HasSoftware
-                ? new RuleOutcome.Match(Category.Provenance, rule.Id, Exif.Describe(summary))
+            // Software that names an AI tool or editor makes the block provenance, as a mixed XMP packet is. A phone's
+            // OS version there is camera data.
+            : NamesATool(summary.Software)
+                ? new RuleOutcome.Match(Category.Provenance, rule.Id, Exif.Describe(summary, softwareNamesATool: true))
                 : new RuleOutcome.Match(Category.Camera, rule.Id, Exif.Describe(summary));
     }
 
@@ -152,6 +160,7 @@ public sealed class RuleSet
     {
         public List<string>? ProvenanceMarkers { get; set; }
         public List<string>? StandardIccDescriptions { get; set; }
+        public List<string>? SoftwareTools { get; set; }
         public List<RuleDto>? Rules { get; set; }
     }
 
