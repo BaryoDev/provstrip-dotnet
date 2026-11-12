@@ -12,7 +12,7 @@ public sealed record StripResult(byte[] Output, IReadOnlyList<Finding> Removed, 
 public static class ProvStripEngine
 {
     // Later formats register here.
-    static readonly IContainer[] Containers = [new PngContainer()];
+    static readonly IContainer[] Containers = [new PngContainer(), new JpegContainer()];
 
     public static Inspection Inspect(ReadOnlyMemory<byte> file, RuleSet? rules = null)
     {
