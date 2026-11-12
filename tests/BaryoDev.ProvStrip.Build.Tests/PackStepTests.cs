@@ -153,6 +153,91 @@ public class PackStepTests
         r.Output.ShouldContain("PROVSTRIP001");
     }
 
+    // Packs a project written into a fresh folder, with fixtures copied to the given paths, through the pack step from source.
+    static (int ExitCode, string Output, string Dir) PackProject(string csproj, (string Path, string Fixture)[] files, params string[] properties)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "provstrip-pack", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "Project.csproj"), csproj);
+        File.Copy(Path.Combine(RepoRoot(), "tests", "BaryoDev.ProvStrip.Build.Tests", "sample", "nuget.config"), Path.Combine(dir, "nuget.config"));
+        foreach (var (path, fixture) in files)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(dir, path))!);
+            File.Copy(Fixtures.PathOf(fixture), Path.Combine(dir, path));
+        }
+        var r = Run(dir, null, ["pack", "Project.csproj", "-o", "out", "--disable-build-servers", "-nodeReuse:false",
+            $"-p:ProvStripTaskAssembly={TaskAssembly()}",
+            $"-p:ProvStripImport={Path.Combine(RepoRoot(), "src", "BaryoDev.ProvStrip.Build", "build")}{Path.DirectorySeparatorChar}",
+            .. properties]);
+        return (r.ExitCode, r.Output, dir);
+    }
+
+    static string Project(string sdk, string items) => $"""
+        <Project Sdk="{sdk}">
+          <Import Project="$(ProvStripImport)BaryoDev.ProvStrip.Build.props" />
+          <PropertyGroup>
+            <TargetFramework>net10.0</TargetFramework>
+            <PackageId>ProvStrip.Project</PackageId>
+            <Version>1.0.0</Version>
+            <Authors>sample</Authors>
+            <Description>A sample package for the ProvStrip pack step tests.</Description>
+          </PropertyGroup>
+          <ItemGroup>{items}</ItemGroup>
+          <Import Project="$(ProvStripImport)BaryoDev.ProvStrip.Build.targets" />
+        </Project>
+        """;
+
+    static SortedSet<string> Entries(string dir)
+    {
+        using var zip = ZipFile.OpenRead(Path.Combine(dir, "out", "ProvStrip.Project.1.0.0.nupkg"));
+        return new(zip.Entries.Select(e => e.FullName).Where(n => !n.StartsWith("package/services/", StringComparison.Ordinal)), StringComparer.Ordinal);
+    }
+
+    // With no PackagePath, NuGet works the path out from where the item sits, so a cleaned copy under obj/ would
+    // land somewhere else in the package. The pack either keeps the original path or refuses.
+    [Fact]
+    public void ItemWithoutPackagePathIsNotMovedInAutoMode()
+    {
+        var csproj = Project("Microsoft.NET.Sdk", """<None Include="assets/logo.png" Pack="true" />""");
+        var plain = PackProject(csproj, [("assets/logo.png", "c2pa.png")], "-p:ProvStripEnabled=false");
+        plain.ExitCode.ShouldBe(0, plain.Output);
+        var auto = PackProject(csproj, [("assets/logo.png", "c2pa.png")], "-p:ProvStripProvenance=auto");
+        if (auto.ExitCode != 0)
+        {
+            auto.Output.ShouldContain("PROVSTRIP006");
+            return;
+        }
+        Entries(auto.Dir).ShouldBe(Entries(plain.Dir));
+    }
+
+    [Fact]
+    public void CleanItemWithoutPackagePathPacks()
+    {
+        var r = PackProject(Project("Microsoft.NET.Sdk", """<None Include="assets/logo.png" Pack="true" />"""), [("assets/logo.png", "clean.png")]);
+        r.ExitCode.ShouldBe(0, r.Output);
+        Entries(r.Dir).ShouldContain("content/assets/logo.png");
+    }
+
+    // A Razor class library records each static web asset's length and hash in the package. A packed copy
+    // that differs from those would be served with the wrong Content-Length and integrity.
+    [Fact]
+    public void StaticWebAssetIsNotChangedBehindItsManifest()
+    {
+        var r = PackProject(Project("Microsoft.NET.Sdk.Razor", ""), [("wwwroot/img.png", "c2pa.png")], "-p:ProvStripProvenance=auto");
+        if (r.ExitCode != 0)
+        {
+            r.Output.ShouldContain("PROVSTRIP005");
+            return;
+        }
+        using var zip = ZipFile.OpenRead(Path.Combine(r.Dir, "out", "ProvStrip.Project.1.0.0.nupkg"));
+        using var asset = new MemoryStream();
+        using (var e = zip.GetEntry("staticwebassets/img.png")!.Open()) e.CopyTo(asset);
+        using var reader = new StreamReader(zip.GetEntry("build/Microsoft.AspNetCore.StaticWebAssets.props")!.Open());
+        var props = reader.ReadToEnd();
+        props.ShouldContain($"<Integrity>{Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(asset.ToArray()))}</Integrity>");
+        props.ShouldContain($"<FileLength>{asset.Length}</FileLength>");
+    }
+
     [Fact] public void BadModeFailsThePack() => Pack("clean.png", "-p:ProvStripCamera=sometimes").Output.ShouldContain("PROVSTRIP004");
 
     [Fact] public void DisabledSkipsTheCheck() => Pack("c2pa.png", "-p:ProvStripEnabled=false").ExitCode.ShouldBe(0);

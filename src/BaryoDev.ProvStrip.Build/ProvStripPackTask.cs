@@ -50,6 +50,10 @@ public sealed class ProvStripPackTask : Microsoft.Build.Utilities.Task
             if (!File.Exists(path) || !IsImage(path)) continue;
 
             var name = item.ItemSpec;
+            var packagePath = item.GetMetadata("PackagePath");
+            // A Razor class library records each static web asset's length and hash in the package, so its packed
+            // copy must stay byte for byte the source.
+            var staticWebAsset = packagePath.Replace('\\', '/').TrimStart('/').StartsWith("staticwebassets/", StringComparison.OrdinalIgnoreCase);
             if (string.Equals(item.GetMetadata("ProvStripSkip"), "true", StringComparison.OrdinalIgnoreCase))
             {
                 Log.LogMessage(MessageImportance.Normal, $"ProvStrip: {name} skipped (ProvStripSkip)");
@@ -74,8 +78,10 @@ public sealed class ProvStripPackTask : Microsoft.Build.Utilities.Task
                 var (code, label, property) = group.Key == Category.Provenance
                     ? ("PROVSTRIP001", "AI attribution", "ProvStripProvenance")
                     : ("PROVSTRIP002", "Camera data", "ProvStripCamera");
-                Log.LogError(null, code, null, path, 0, 0, 0, 0,
-                    $"{name}: {label} found ({Describe(group)}). Set {property}=auto to strip the packed copy, or ProvStripSkip=\"true\" on the item.");
+                var hint = staticWebAsset
+                    ? "It is a static web asset, so strip the source file: provstrip strip -i <file>."
+                    : $"Set {property}=auto to strip the packed copy, or ProvStripSkip=\"true\" on the item.";
+                Log.LogError(null, code, null, path, 0, 0, 0, 0, $"{name}: {label} found ({Describe(group)}). {hint}");
             }
             foreach (var f in decision.Unknown)
             {
@@ -88,6 +94,24 @@ public sealed class ProvStripPackTask : Microsoft.Build.Utilities.Task
             if (decision.Blocked || decision.Remove.Count == 0)
             {
                 if (inspection.IsClean) Log.LogMessage(MessageImportance.Normal, $"ProvStrip: {name} is clean");
+                continue;
+            }
+
+            if (staticWebAsset)
+            {
+                Log.LogError(null, "PROVSTRIP005", null, path, 0, 0, 0, 0,
+                    $"{name}: {Describe(decision.Remove)} found in a static web asset. The package records its length and hash, " +
+                    "so the packed copy cannot be stripped. Strip the source file: provstrip strip -i <file>.");
+                continue;
+            }
+
+            // With no PackagePath, NuGet places a file by where it sits in the project, so a cleaned copy under obj/
+            // would land at a different path in the package.
+            if (string.IsNullOrEmpty(packagePath))
+            {
+                Log.LogError(null, "PROVSTRIP006", null, path, 0, 0, 0, 0,
+                    $"{name}: {Describe(decision.Remove)} found, and the item has no PackagePath, so a cleaned copy cannot " +
+                    "take its place. Set PackagePath on the item, or strip the source file: provstrip strip -i <file>.");
                 continue;
             }
 

@@ -125,6 +125,12 @@ To let one file through, set `ProvStripSkip="true"` on its item:
 
 An unknown segment fails the pack even when `auto` is set, unless `ProvStripKeepUnknown` is `true`.
 
+`auto` swaps in a cleaned copy only where that copy can take the original's place. Two cases fail the pack
+instead and name the source file to strip with `provstrip strip -i`:
+
+- `PROVSTRIP005`: a static web asset in a Razor class library. The package records its length and hash.
+- `PROVSTRIP006`: an item with no `PackagePath`. NuGet places it by where it sits in the project.
+
 ## Rules
 
 The built-in rules are in [`src/BaryoDev.ProvStrip/Rules/rules.json`](src/BaryoDev.ProvStrip/Rules/rules.json).
