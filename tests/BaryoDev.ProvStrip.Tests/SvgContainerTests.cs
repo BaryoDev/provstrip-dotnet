@@ -144,4 +144,17 @@ public class SvgContainerTests
 
     [Fact] public void XmlDeclarationAfterTheStartIsAnInstruction() =>
         Find($"""<?xml version="1.0"?><svg {SvgNs}><?xml version="1.0"?></svg>""").ShouldHaveSingleItem().Segment.Label.ShouldBe("#pi");
+
+    [Fact] public void StandardPublicIdWithAnotherSystemUrlIsAnUnknown() =>
+        Find($"""<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://example.com/x.dtd"><svg {SvgNs}/>""")
+            .ShouldHaveSingleItem().Segment.Label.ShouldBe("#doctype");
+
+    [Fact] public void EncodingThatChangesMarkupBytesIsRefused() =>
+        Should.Throw<ProvStripFormatException>(() => Find($"""<?xml version="1.0" encoding="UTF-7"?><svg {SvgNs}/>"""));
+
+    [Fact] public void Latin1DeclarationIsKept() =>
+        Find($"""<?xml version="1.0" encoding="ISO-8859-1" standalone="no"?><svg {SvgNs}/>""").ShouldBeEmpty();
+
+    [Fact] public void UnknownXmlVersionIsAnInstruction() =>
+        Find($"""<?xml version="2.0"?><svg {SvgNs}/>""").ShouldHaveSingleItem().Segment.Label.ShouldBe("#pi");
 }

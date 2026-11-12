@@ -60,14 +60,14 @@ internal sealed class SvgContainer : IContainer
             {
                 var end = After(b, i + 2, "?>"u8, "unclosed processing instruction", i);
                 var atStart = i == 0 || (i == 3 && b.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]));
-                if (!(atStart && XmlDeclaration.IsMatch(Encoding.UTF8.GetString(b[i..end]))))
+                if (!(atStart && IsPlainXmlDeclaration(Encoding.UTF8.GetString(b[i..end]), i)))
                     segments.Add(new Segment(i, end - i, "#pi"));
                 i = end;
             }
             else if (b[i..].StartsWith("<!DOCTYPE"u8))
             {
                 var (end, subset) = SkipDoctype(b, i);
-                if (subset || !PlainDoctype.IsMatch(Encoding.UTF8.GetString(b[i..end])))
+                if (subset || !IsPlainDoctype(Encoding.UTF8.GetString(b[i..end])))
                     segments.Add(new Segment(i, end - i, "#doctype"));
                 i = end;
             }
@@ -202,14 +202,58 @@ internal sealed class SvgContainer : IContainer
         return NamespaceLabel(name, Resolve(prefix, scope), prefix, local, insideLabelled);
     }
 
-    // Only the declaration's own pseudo-attributes, so nothing else can ride in it.
-    static readonly Regex XmlDeclaration = new(
-        """^<\?xml(\s+(version|encoding|standalone)\s*=\s*("[^"]*"|'[^']*'))*\s*\?>$""", RegexOptions.CultureInvariant);
+    // XML whitespace only: .NET's \s also matches Unicode spaces that XML does not allow.
+    const string Ws = "[ \\t\\r\\n]";
 
-    // A bare doctype or the W3C SVG one. Any other external DTD could define what this scanner cannot see.
-    static readonly Regex PlainDoctype = new(
-        """^<!DOCTYPE\s+svg(\s+PUBLIC\s+["']-//W3C//DTD SVG 1\.(0|1|1 Basic|1 Tiny)//EN["'](\s+["'][^"']*["'])?)?\s*>$""",
+    static readonly Regex XmlDeclaration = new(
+        $"""^<\?xml((?:{Ws}+(?:version|encoding|standalone){Ws}*={Ws}*(?:"[^"]*"|'[^']*'))*){Ws}*\?>$""",
         RegexOptions.CultureInvariant);
+
+    static readonly Regex PseudoAttribute = new(
+        $"""(version|encoding|standalone){Ws}*={Ws}*(?:"([^"]*)"|'([^']*)')""", RegexOptions.CultureInvariant);
+
+    // Encodings whose markup bytes are the same as UTF-8's, so this scanner reads what a renderer reads.
+    static readonly Regex SameMarkupEncoding = new(
+        "^(utf-8|us-ascii|iso-8859-[0-9]{1,2}|windows-125[0-8])$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    // Only version 1.0 or 1.1, an encoding and standalone yes or no, so nothing else can ride in it.
+    static bool IsPlainXmlDeclaration(string text, int offset)
+    {
+        var m = XmlDeclaration.Match(text);
+        if (!m.Success) return false;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match a in PseudoAttribute.Matches(m.Groups[1].Value))
+        {
+            var key = a.Groups[1].Value;
+            var value = a.Groups[2].Success ? a.Groups[2].Value : a.Groups[3].Value;
+            if (!seen.Add(key)) return false;
+            if (key == "version" && value is not ("1.0" or "1.1")) return false;
+            if (key == "standalone" && value is not ("yes" or "no")) return false;
+            if (key == "encoding" && !SameMarkupEncoding.IsMatch(value))
+                throw new ProvStripFormatException($"SVG encoding \"{value}\" is not supported", offset);
+        }
+        return true;
+    }
+
+    // A bare doctype, or a W3C SVG public identifier with no system URL or that version's own URL.
+    static readonly Regex Doctype = new(
+        $"""^<!DOCTYPE{Ws}+svg(?:{Ws}+PUBLIC{Ws}+(["'])-//W3C//DTD SVG (1\.0|1\.1|1\.1 Basic|1\.1 Tiny)//EN\1(?:{Ws}+(["'])([^"']*)\3)?)?{Ws}*>$""",
+        RegexOptions.CultureInvariant);
+
+    static readonly Dictionary<string, string> DtdUrls = new(StringComparer.Ordinal)
+    {
+        ["1.0"] = "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd",
+        ["1.1"] = "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd",
+        ["1.1 Basic"] = "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-basic.dtd",
+        ["1.1 Tiny"] = "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-tiny.dtd",
+    };
+
+    static bool IsPlainDoctype(string text)
+    {
+        var m = Doctype.Match(text);
+        if (!m.Success) return false;
+        return !m.Groups[4].Success || DtdUrls[m.Groups[2].Value] == m.Groups[4].Value;
+    }
 
     // The doctype may hold an internal subset in brackets, with comments, processing instructions and quoted
     // strings inside it that can contain any of [ ] > ' ".
