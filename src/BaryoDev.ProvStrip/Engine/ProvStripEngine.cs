@@ -12,7 +12,7 @@ public sealed record StripResult(byte[] Output, IReadOnlyList<Finding> Removed, 
 public static class ProvStripEngine
 {
     // Later formats register here.
-    static readonly IContainer[] Containers = [new PngContainer(), new JpegContainer(), new WebpContainer()];
+    static readonly IContainer[] Containers = [new PngContainer(), new JpegContainer(), new WebpContainer(), new SvgContainer()];
 
     public static Inspection Inspect(ReadOnlyMemory<byte> file, RuleSet? rules = null)
     {
@@ -28,7 +28,7 @@ public static class ProvStripEngine
                 case RuleOutcome.Match m:
                     findings.Add(new Finding(container.Format, segment, m.Category, m.RuleId, m.Description, CanDelete: true));
                     break;
-                case var o when ReferenceEquals(o, RuleOutcome.NoRule):
+                case var o when ReferenceEquals(o, RuleOutcome.NoRule) && !container.KeepsUnmatched(segment):
                     findings.Add(new Finding(container.Format, segment, Category.Unknown, "unknown",
                         $"unknown {segment.Label} segment", container.IsSafeToDrop(segment)));
                     break;
@@ -56,6 +56,10 @@ public static class ProvStripEngine
                 throw new ArgumentException($"{f.Description} at byte {f.Segment.Start} cannot be removed safely", nameof(remove));
         }
 
+        // A segment inside one that is removed goes with it (SVG elements nest), so it is reported as removed too.
+        var inside = before.Findings.Where(f => !removed.Contains(f) && removed.Any(r =>
+            r.Segment.Start <= f.Segment.Start && f.Segment.End <= r.Segment.End)).ToList();
+
         var container = Resolve(file.Span);
         var edits = removed.Select(f => new SegmentEdit(f.Segment,
             rules.IsExifRule(f.RuleId) ? Exif.OrientationOnly(container.Payload(f.Segment, file).Span) : null)).ToList();
@@ -71,6 +75,7 @@ public static class ProvStripEngine
             throw new ProvStripException($"verify after strip failed: output does not parse ({e.Message})");
         }
 
+        removed.AddRange(inside);
         var expected = Keys(before.Findings.Except(removed));
         var actual = Keys(after.Findings);
         if (!expected.SequenceEqual(actual))

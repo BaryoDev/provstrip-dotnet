@@ -18,6 +18,9 @@ internal interface IContainer
     /// <summary>Whether an unknown segment can be removed without breaking the file.</summary>
     bool IsSafeToDrop(Segment segment);
 
+    /// <summary>A segment no rule names that is kept and not reported, rather than reported as unknown.</summary>
+    bool KeepsUnmatched(Segment segment) => false;
+
     /// <summary>The bytes the rules look at.</summary>
     ReadOnlyMemory<byte> Payload(Segment segment, ReadOnlyMemory<byte> bytes);
 
