@@ -116,4 +116,18 @@ public class EngineTests
         finding.Description.ShouldBe("unknown TRAILER segment");
         ProvStripEngine.Strip(input, [finding]).Output.ShouldBe(clean);
     }
+
+    static byte[] CanonicalOrientation() => Exif.OrientationOnly(PngExifPayload(Fixtures.Read("camera.png")))!;
+
+    [Fact] public void CanonicalOrientationOnlyExifIsKept() =>
+        ProvStripEngine.Inspect(Bytes.CleanPngWith("eXIf", CanonicalOrientation())).IsClean.ShouldBeTrue();
+
+    [Fact] public void OrientationOnlyExifWithExtraBytesIsAFinding()
+    {
+        var input = Bytes.CleanPngWith("eXIf", [.. CanonicalOrientation(), .. "hidden"u8]);
+        var finding = ProvStripEngine.Inspect(input).Findings.ShouldHaveSingleItem();
+        finding.Category.ShouldBe(Category.Camera);
+        var output = ProvStripEngine.Strip(input, [finding]).Output;
+        output.ShouldBe(Bytes.CleanPngWith("eXIf", CanonicalOrientation()));
+    }
 }

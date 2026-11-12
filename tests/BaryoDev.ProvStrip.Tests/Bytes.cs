@@ -16,4 +16,19 @@ internal static class Bytes
         }
         throw new InvalidOperationException($"no segment 0xFF{marker:X2}");
     }
+
+    public static byte[] PngChunk(string type, byte[] data)
+    {
+        var typeBytes = System.Text.Encoding.ASCII.GetBytes(type);
+        var crc = PngContainer.Crc32([.. typeBytes, .. data]);
+        return [(byte)(data.Length >> 24), (byte)(data.Length >> 16), (byte)(data.Length >> 8), (byte)data.Length,
+            .. typeBytes, .. data, (byte)(crc >> 24), (byte)(crc >> 16), (byte)(crc >> 8), (byte)crc];
+    }
+
+    /// <summary>clean.png with one more chunk before IEND.</summary>
+    public static byte[] CleanPngWith(string type, byte[] data)
+    {
+        var clean = Fixtures.Read("clean.png");
+        return [.. clean[..^12], .. PngChunk(type, data), .. clean[^12..]];
+    }
 }

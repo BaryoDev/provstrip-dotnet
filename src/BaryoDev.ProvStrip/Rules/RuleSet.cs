@@ -111,7 +111,8 @@ public sealed class RuleSet
     static RuleOutcome ClassifyExif(Rule rule, ReadOnlySpan<byte> payload)
     {
         var summary = Exif.Read(payload);
-        return summary.OnlyOrientation
+        // Kept only when it is exactly what a strip would write, so no bytes can ride along unread.
+        return summary.OnlyOrientation && Exif.OrientationOnly(payload) is { } canonical && payload.SequenceEqual(canonical)
             ? RuleOutcome.Keep
             : new RuleOutcome.Match(Category.Camera, rule.Id, Exif.Describe(summary));
     }
