@@ -104,6 +104,10 @@ public sealed class RuleSet
         return RuleOutcome.NoRule;
     }
 
+    /// <summary>Whether a finding came from a rule whose segment is rewritten rather than dropped.</summary>
+    internal bool IsExifRule(string ruleId) =>
+        rules.Any(r => r.Classify == Classifier.Exif && string.Equals(r.Id, ruleId, StringComparison.Ordinal));
+
     static RuleOutcome ClassifyExif(Rule rule, ReadOnlySpan<byte> payload)
     {
         var summary = Exif.Read(payload);
