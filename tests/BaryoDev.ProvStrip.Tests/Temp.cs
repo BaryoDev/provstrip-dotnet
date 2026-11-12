@@ -11,4 +11,13 @@ internal static class Temp
         File.Copy(Fixtures.PathOf(fixture), path);
         return path;
     }
+
+    /// <summary>A fresh directory holding copies of the named fixtures.</summary>
+    public static string Dir(params string[] fixtures)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "provstrip-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        foreach (var f in fixtures) File.Copy(Fixtures.PathOf(f), Path.Combine(dir, f));
+        return dir;
+    }
 }
