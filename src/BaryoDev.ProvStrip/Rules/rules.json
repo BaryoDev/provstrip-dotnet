@@ -1,11 +1,12 @@
 {
-  "provenanceMarkers": ["c2pa", "jumd", "claim_generator", "contentcredentials", "CreatorTool", "softwareAgent", "anthropic"],
+  "provenanceMarkers": ["c2pa", "jumd", "claim_generator", "contentcredentials", "CreatorTool", "softwareAgent", "anthropic", "trainedAlgorithmicMedia", "algorithmicMedia", "compositeSynthetic"],
   "standardIccDescriptions": ["sRGB IEC61966-2.1", "sRGB", "Display P3", "Adobe RGB (1998)", "ProPhoto RGB", "Generic Gray Profile", "Generic Gray Gamma 2.2 Profile", "Rec. 2020", "ITU-R BT.2020"],
   "rules": [
     { "id": "png-cabx",          "format": "png",  "label": "caBX",              "category": "provenance", "describe": "C2PA" },
     { "id": "png-jumbf",         "format": "png",  "label": "jUMB|jumb",         "category": "provenance", "describe": "C2PA" },
     { "id": "png-text-c2pa",     "format": "png",  "label": "tEXt|iTXt|zTXt", "keyword": "c2pa*", "category": "provenance", "describe": "C2PA" },
     { "id": "png-software",      "format": "png",  "label": "tEXt|iTXt|zTXt", "keyword": "Software", "category": "provenance", "describe": "Software tag" },
+    { "id": "png-generator",     "format": "png",  "label": "tEXt|iTXt|zTXt", "keyword": "parameters|prompt|workflow", "category": "provenance", "describe": "generation settings" },
     { "id": "png-xmp",           "format": "png",  "label": "iTXt", "keyword": "XML:com.adobe.xmp", "classify": "xmp" },
     { "id": "png-text",          "format": "png",  "label": "tEXt|iTXt|zTXt", "category": "camera", "describe": "text" },
     { "id": "png-exif",          "format": "png",  "label": "eXIf", "classify": "exif" },
@@ -23,7 +24,7 @@
     { "id": "webp-icc",          "format": "webp", "label": "ICCP", "classify": "icc" },
     { "id": "svg-metadata",      "format": "svg",  "label": "metadata", "classify": "xmp" },
     { "id": "svg-c2pa",          "format": "svg",  "label": "c2pa:*", "category": "provenance", "describe": "C2PA" },
-    { "id": "svg-generator",     "format": "svg",  "label": "#comment", "contains": ["Generator", "c2pa"], "category": "provenance", "describe": "generator comment" },
+    { "id": "svg-generator",     "format": "svg",  "label": "#comment", "contains": ["Generator", "c2pa", "Created with Inkscape"], "category": "provenance", "describe": "generator comment" },
     { "id": "svg-editor",        "format": "svg",  "label": "inkscape:*|sodipodi:*", "category": "provenance", "describe": "editor data" }
   ]
 }

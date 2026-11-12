@@ -88,7 +88,7 @@ public sealed class RuleSet
         {
             if (!string.Equals(rule.Format, format, StringComparison.Ordinal)) continue;
             if (!rule.Labels.Any(l => Glob(l, segment.Label))) continue;
-            if (rule.Keyword is not null && (segment.Keyword is null || !Glob(rule.Keyword, segment.Keyword))) continue;
+            if (rule.Keyword is not null && (segment.Keyword is null || !rule.Keyword.Split('|').Any(k => Glob(k, segment.Keyword)))) continue;
             if (rule.Contains.Count > 0 && !Xmp.ContainsAny(payload, rule.Contains)) continue;
 
             if (rule.Category is { } category) return new RuleOutcome.Match(category, rule.Id, rule.Describe!);
@@ -114,7 +114,10 @@ public sealed class RuleSet
         // Kept only when it is exactly what a strip would write, so no bytes can ride along unread.
         return summary.OnlyOrientation && Exif.OrientationOnly(payload) is { } canonical && payload.SequenceEqual(canonical)
             ? RuleOutcome.Keep
-            : new RuleOutcome.Match(Category.Camera, rule.Id, Exif.Describe(summary));
+            // A Software tag names the program that wrote the file, so the block is provenance, as a mixed XMP packet is.
+            : summary.HasSoftware
+                ? new RuleOutcome.Match(Category.Provenance, rule.Id, "Software tag")
+                : new RuleOutcome.Match(Category.Camera, rule.Id, Exif.Describe(summary));
     }
 
     // A standard profile is kept. Anything else may name the machine it came from.

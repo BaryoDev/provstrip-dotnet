@@ -66,4 +66,45 @@ public class RuleSetTests
         File.WriteAllText(path, OneRule("""{"id":"mine","format":"png","label":"prVt","category":"camera","describe":"private"}"""));
         RuleSet.Load(path).Classify("png", new Segment(0, 1, "prVt"), []).ShouldBe(new RuleOutcome.Match(Category.Camera, "mine", "private"));
     }
+
+    // Image generators write their settings as PNG text: Automatic1111 under "parameters", ComfyUI under "prompt" and "workflow".
+    [Theory, InlineData("parameters"), InlineData("prompt"), InlineData("workflow")]
+    public void GeneratorSettingsInPngTextAreProvenance(string keyword) =>
+        Classify("png", "tEXt", keyword, "{\"steps\": 20}").Category.ShouldBe(Category.Provenance);
+
+    // IPTC digital source types that say a model made or helped make the image.
+    [Theory]
+    [InlineData("trainedAlgorithmicMedia")]
+    [InlineData("compositeWithTrainedAlgorithmicMedia")]
+    [InlineData("algorithmicMedia")]
+    [InlineData("compositeSynthetic")]
+    public void AiDigitalSourceTypeInXmpIsProvenance(string code)
+    {
+        var xmp = $"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description xmlns:Iptc4xmpExt=\"http://iptc.org/std/Iptc4xmpExt/2008-02-29/\" Iptc4xmpExt:DigitalSourceType=\"http://cv.iptc.org/newscodes/digitalsourcetype/{code}\"/></rdf:RDF></x:xmpmeta>";
+        var payload = Encoding.UTF8.GetBytes(xmp);
+        RuleSet.Default.Classify("webp", new Segment(0, payload.Length, "XMP "), payload)
+            .ShouldBeOfType<RuleOutcome.Match>().Category.ShouldBe(Category.Provenance);
+    }
+
+    [Fact] public void DigitalCaptureSourceTypeIsNotProvenance()
+    {
+        var payload = Encoding.UTF8.GetBytes("<x:xmpmeta><rdf:Description Iptc4xmpExt:DigitalSourceType=\"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture\"/></x:xmpmeta>");
+        RuleSet.Default.Classify("webp", new Segment(0, payload.Length, "XMP "), payload)
+            .ShouldBeOfType<RuleOutcome.Match>().Category.ShouldBe(Category.Camera);
+    }
+
+    [Fact] public void InkscapeCreatedWithCommentIsProvenance()
+    {
+        var payload = Encoding.UTF8.GetBytes(" Created with Inkscape (http://www.inkscape.org/) ");
+        RuleSet.Default.Classify("svg", new Segment(0, payload.Length, "#comment"), payload)
+            .ShouldBe(new RuleOutcome.Match(Category.Provenance, "svg-generator", "generator comment"));
+    }
+
+    // EXIF 0x0131 Software names the program that wrote the file.
+    [Fact] public void ExifSoftwareTagIsProvenance()
+    {
+        byte[] tiff = [.. "II*\0"u8, 8, 0, 0, 0, 1, 0, 0x31, 0x01, 2, 0, 5, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0, .. "Tool\0"u8];
+        RuleSet.Default.Classify("webp", new Segment(0, tiff.Length, "EXIF"), tiff)
+            .ShouldBe(new RuleOutcome.Match(Category.Provenance, "webp-exif", "Software tag"));
+    }
 }

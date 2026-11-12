@@ -2,7 +2,8 @@ using System.Buffers.Binary;
 
 namespace BaryoDev.ProvStrip.Rules;
 
-internal sealed record ExifSummary(ushort? Orientation, bool HasGps, bool HasCameraModel, bool HasDateTaken, bool OnlyOrientation);
+internal sealed record ExifSummary(ushort? Orientation, bool HasGps, bool HasCameraModel, bool HasDateTaken, bool OnlyOrientation,
+    bool HasSoftware = false);
 
 /// <summary>Reads just enough of an EXIF (TIFF) block to describe it and to keep orientation.</summary>
 internal static class Exif
@@ -18,7 +19,7 @@ internal static class Exif
         var ifd0 = ReadU32(tiff, 4, big);
 
         ushort? orientation = null;
-        bool gps = false, model = false, date = false;
+        bool gps = false, model = false, date = false, software = false;
         uint exifIfd = 0;
 
         var count = ReadU16(tiff, ifd0, big);
@@ -32,6 +33,7 @@ internal static class Exif
                 case OrientationTag: orientation = ReadU16(tiff, at + 8, big); break;
                 case 0x010F or 0x0110: model = true; break;
                 case 0x0132: date = true; break;
+                case 0x0131: software = true; break;
                 case 0x8825: gps = true; break;
                 case 0x8769: exifIfd = ReadU32(tiff, at + 8, big); break;
             }
@@ -46,7 +48,7 @@ internal static class Exif
         }
 
         var only = count == 1 && orientation is not null && next == 0;
-        return new ExifSummary(orientation, gps, model, date, only);
+        return new ExifSummary(orientation, gps, model, date, only, software);
     }
 
     /// <summary>

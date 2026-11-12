@@ -17,8 +17,8 @@ Findings come in three categories, and each category is handled on its own.
 | Category | What | Where |
 | --- | --- | --- |
 | AI and tool provenance | C2PA manifests | PNG `caBX`, JPEG APP11 (JUMBF), WebP `C2PA`, SVG `<c2pa:manifest>` |
-| | XMP that names a tool (`CreatorTool`, `softwareAgent`, C2PA markers) | PNG `iTXt`, JPEG APP1, WebP `XMP `, SVG `<metadata>` |
-| | Software and generator text | PNG `tEXt`/`zTXt`/`iTXt`, SVG generator comments |
+| | XMP that names a tool (`CreatorTool`, `softwareAgent`, C2PA markers) or gives an IPTC digital source type of generated media (`trainedAlgorithmicMedia`, `algorithmicMedia`, `compositeSynthetic`) | PNG `iTXt`, JPEG APP1, WebP `XMP `, SVG `<metadata>` |
+| | Software and generator text | PNG `tEXt`/`zTXt`/`iTXt` (`Software`, and the `parameters`, `prompt` and `workflow` keys image generators write), EXIF `Software`, SVG generator comments |
 | | Editor data | SVG `inkscape:` and `sodipodi:` elements, attributes and namespace declarations |
 | Camera data | EXIF: camera model, date taken, GPS | JPEG APP1, PNG `eXIf`, WebP `EXIF` |
 | | IPTC and comments | JPEG APP13 and COM |
