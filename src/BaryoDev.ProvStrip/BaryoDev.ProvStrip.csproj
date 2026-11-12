@@ -6,6 +6,9 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Rules/rules.json" LogicalName="BaryoDev.ProvStrip.rules.json" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="BaryoDev.ProvStrip.Tests" />
     <InternalsVisibleTo Include="BaryoDev.ProvStrip.Tool.Tests" />
     <InternalsVisibleTo Include="BaryoDev.ProvStrip.Build.Tests" />
