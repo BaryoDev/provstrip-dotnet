@@ -1,0 +1,4 @@
+<Project>
+  <!-- A project with TargetFrameworks packs in its outer build, which NuGet gives only buildMultiTargeting/. -->
+  <Import Project="$(MSBuildThisFileDirectory)../build/BaryoDev.ProvStrip.Build.props" />
+</Project>

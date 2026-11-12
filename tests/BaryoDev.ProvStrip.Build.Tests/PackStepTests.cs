@@ -94,6 +94,65 @@ public class PackStepTests
         r.PackedFile("icon.png").ShouldBe(Fixtures.Read("clean.png"));
     }
 
+    static (int ExitCode, string Output) Run(string dir, IDictionary<string, string>? env, params string[] args)
+    {
+        var start = new ProcessStartInfo("dotnet") { WorkingDirectory = dir, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var a in args) start.ArgumentList.Add(a);
+        foreach (var (k, v) in env ?? new Dictionary<string, string>()) start.Environment[k] = v;
+        using var process = Process.Start(start)!;
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(TimeSpan.FromMinutes(5))) process.Kill(entireProcessTree: true);
+        return (process.ExitCode, stdout.Result + stderr.Result);
+    }
+
+    // The package as NuGet consumers get it: packed to a local feed, restored into a clean package folder.
+    // A project with TargetFrameworks packs in the outer build, which imports buildMultiTargeting/, not build/.
+    [Theory]
+    [InlineData("TargetFramework", "net10.0")]
+    [InlineData("TargetFrameworks", "net8.0;net10.0")]
+    public void ConsumerOfThePackageIsChecked(string property, string frameworks)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "provstrip-pack", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var configuration = new DirectoryInfo(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)).Parent!.Name;
+        var packed = Run(dir, null, "pack", Path.Combine(RepoRoot(), "src", "BaryoDev.ProvStrip.Build", "BaryoDev.ProvStrip.Build.csproj"),
+            "-c", configuration, "--no-build", "-o", Path.Combine(dir, "feed"), "-p:Version=0.0.0-consumer", "--disable-build-servers", "-nodeReuse:false");
+        packed.ExitCode.ShouldBe(0, packed.Output);
+
+        File.WriteAllText(Path.Combine(dir, "nuget.config"), """
+            <?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+                <add key="local" value="feed" />
+              </packageSources>
+            </configuration>
+            """);
+        File.WriteAllText(Path.Combine(dir, "Consumer.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <{property}>{frameworks}</{property}>
+                <PackageId>ProvStrip.Consumer</PackageId>
+                <Version>1.0.0</Version>
+                <Authors>sample</Authors>
+                <Description>A consumer of the ProvStrip pack step.</Description>
+                <PackageIcon>icon.png</PackageIcon>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="BaryoDev.ProvStrip.Build" Version="0.0.0-consumer" />
+                <None Include="icon.png" Pack="true" PackagePath="/" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.Copy(Fixtures.PathOf("c2pa.png"), Path.Combine(dir, "icon.png"));
+
+        var env = new Dictionary<string, string> { ["NUGET_PACKAGES"] = Path.Combine(dir, "packages") };
+        var r = Run(dir, env, "pack", "Consumer.csproj", "-o", "out", "--disable-build-servers", "-nodeReuse:false");
+        r.ExitCode.ShouldNotBe(0, r.Output);
+        r.Output.ShouldContain("PROVSTRIP001");
+    }
+
     [Fact] public void BadModeFailsThePack() => Pack("clean.png", "-p:ProvStripCamera=sometimes").Output.ShouldContain("PROVSTRIP004");
 
     [Fact] public void DisabledSkipsTheCheck() => Pack("c2pa.png", "-p:ProvStripEnabled=false").ExitCode.ShouldBe(0);

@@ -248,7 +248,16 @@ jobs:
           unzip -o -q out/consumer.1.0.0.nupkg icon.png -d packed
           cmp -s packed/icon.png icon.png && { echo "::error::The packed icon was not stripped."; exit 1; }
           cmp -s icon.png "$GITHUB_WORKSPACE/tests/fixtures/c2pa.png" || { echo "::error::The source icon was changed."; exit 1; }
-          echo "Pack step fails on C2PA and strips only the packed copy."
+
+          # A project with TargetFrameworks packs in the outer build, which imports buildMultiTargeting/.
+          sed -i 's#<TargetFramework>net10.0</TargetFramework>#<TargetFrameworks>net8.0;net10.0</TargetFrameworks>#' consumer.csproj
+          grep -q "<TargetFrameworks>" consumer.csproj || { echo "::error::The consumer was not switched to TargetFrameworks."; exit 1; }
+          if dotnet pack -o out-multi > pack-multi.log 2>&1; then
+            cat pack-multi.log
+            echo "::error::The pack step let a C2PA icon through a multi-target pack." && exit 1
+          fi
+          grep -q "PROVSTRIP001" pack-multi.log || { cat pack-multi.log; echo "::error::The multi-target pack failed, but not with PROVSTRIP001."; exit 1; }
+          echo "Pack step fails on C2PA, single and multi target, and strips only the packed copy."
 
       # Requested here rather than earlier because the key expires after an hour and each OIDC
       # token buys exactly one key. Runs on dry runs too, so a dry run actually verifies the
