@@ -136,4 +136,19 @@ public class JpegContainerTests
         mpf[4 + 10 + 24] = 0x99; // third entry's tag low byte: 0xB099
         OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE2, mpf)).Label().ShouldBe("APP2");
     }
+
+    // Each MPF tag has one type and count, so no value can be stretched to carry other bytes.
+    [Fact] public void MpfVersionMustBe0100()
+    {
+        var mpf = MpfIndex();
+        "ABCD"u8.CopyTo(mpf.AsSpan(4 + 18));
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE2, mpf)).Label().ShouldBe("APP2");
+    }
+
+    [Fact] public void MpEntriesMustBeSixteenBytesPerImage()
+    {
+        var mpf = MpfIndex(new byte[16]);
+        mpf[4 + 38] = 48; // three entries' worth for two images
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE2, mpf)).Label().ShouldBe("APP2");
+    }
 }

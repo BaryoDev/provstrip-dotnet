@@ -8,9 +8,20 @@ namespace BaryoDev.ProvStrip.Formats;
 /// </summary>
 internal static class Mpf
 {
-    static readonly HashSet<ushort> IndexTags = [0xB000, 0xB001, 0xB002, 0xB003, 0xB004];
+    // ImageUIDList (0xB003) is left out: 33 free bytes per image is room for anything, so it is not structure.
+    static bool IsIndexTag(ushort tag) => tag is 0xB000 or 0xB001 or 0xB002 or 0xB004;
 
     static bool IsAttributeTag(ushort tag) => tag is 0xB000 or 0xB101 or >= 0xB201 and <= 0xB20D;
+
+    // The one type and count each tag has (CIPA DC-007), so no value can be stretched to carry other bytes.
+    static bool Fits(ushort tag, ushort type, uint count, uint images) => tag switch
+    {
+        0xB000 => type == 7 && count == 4,
+        0xB001 or 0xB004 or 0xB101 or 0xB201 or 0xB204 => type == 4 && count == 1,
+        0xB002 => type == 7 && images > 0 && count == 16L * images,
+        >= 0xB202 and <= 0xB20D => type is 5 or 10 && count == 1,
+        _ => false,
+    };
 
     public static bool IsExact(ReadOnlySpan<byte> payload)
     {
@@ -24,22 +35,25 @@ internal static class Mpf
 
         var regions = new List<(long Start, long End)> { (0, 8) };
         long ifd = U32(tiff, 4, big);
-        var next = ReadIfd(tiff, ifd, big, t => IndexTags.Contains(t), regions);
+        uint images = 0;
+        var next = ReadIfd(tiff, ifd, big, IsIndexTag, regions, ref images);
         if (next is null) return false;
-        if (next != 0 && ReadIfd(tiff, next.Value, big, IsAttributeTag, regions) is not 0) return false;
+        if (next != 0 && ReadIfd(tiff, next.Value, big, IsAttributeTag, regions, ref images) is not 0) return false;
 
+        // The regions must tile the payload: a gap is bytes no structure accounts for, an overlap is a value
+        // read two ways.
         regions.Sort();
         long covered = 0;
         foreach (var (start, end) in regions)
         {
-            if (start > covered) return false; // a gap no structure accounts for
-            covered = Math.Max(covered, end);
+            if (start != covered) return false;
+            covered = end;
         }
         return covered == tiff.Length;
     }
 
     // Adds the IFD and its out-of-line values to regions. Returns the next IFD offset, or null when malformed.
-    static long? ReadIfd(ReadOnlySpan<byte> tiff, long at, bool big, Func<ushort, bool> allowed, List<(long, long)> regions)
+    static long? ReadIfd(ReadOnlySpan<byte> tiff, long at, bool big, Func<ushort, bool> allowed, List<(long, long)> regions, ref uint images)
     {
         if (at < 8 || at + 2 > tiff.Length) return null;
         var count = U16(tiff, at, big);
@@ -50,8 +64,12 @@ internal static class Mpf
         {
             var entry = at + 2 + i * 12L;
             var tag = U16(tiff, entry, big);
-            if (!allowed(tag)) return null;
-            var size = U16(tiff, entry + 2, big) switch
+            var type = U16(tiff, entry + 2, big);
+            var values = U32(tiff, entry + 4, big);
+            if (!allowed(tag) || !Fits(tag, type, values, images)) return null;
+            if (tag == 0xB000 && !tiff.Slice((int)entry + 8, 4).SequenceEqual("0100"u8)) return null;
+            if (tag == 0xB001) images = U32(tiff, entry + 8, big);
+            var size = type switch
             {
                 1 or 2 or 7 => 1L,
                 3 => 2L,
@@ -60,7 +78,7 @@ internal static class Mpf
                 _ => -1L,
             };
             if (size < 0) return null;
-            var length = size * U32(tiff, entry + 4, big);
+            var length = size * values;
             if (length <= 4) continue;
             long offset = U32(tiff, entry + 8, big);
             if (offset + length > tiff.Length) return null;
