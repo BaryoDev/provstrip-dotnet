@@ -97,14 +97,31 @@ public sealed class RuleSet
                 Classifier.Xmp => Xmp.NamesATool(payload, ProvenanceMarkers)
                     ? new RuleOutcome.Match(Category.Provenance, rule.Id, "XMP naming a tool")
                     : new RuleOutcome.Match(Category.Camera, rule.Id, "XMP"),
-                _ => ClassifyMore(rule, payload),
+                Classifier.Exif => ClassifyExif(rule, payload),
+                _ => ClassifyIcc(rule, payload),
             };
         }
         return RuleOutcome.NoRule;
     }
 
-    // EXIF and ICC readers are wired in by the next task.
-    static RuleOutcome ClassifyMore(Rule rule, ReadOnlySpan<byte> payload) => RuleOutcome.NoRule;
+    static RuleOutcome ClassifyExif(Rule rule, ReadOnlySpan<byte> payload)
+    {
+        var summary = Exif.Read(payload);
+        return summary.OnlyOrientation
+            ? RuleOutcome.Keep
+            : new RuleOutcome.Match(Category.Camera, rule.Id, Exif.Describe(summary));
+    }
+
+    // A standard profile is kept. Anything else may name the machine it came from.
+    RuleOutcome ClassifyIcc(Rule rule, ReadOnlySpan<byte> payload)
+    {
+        var profile = IccProfile.FromPayload(rule.Format, payload);
+        var description = profile is null ? null : IccProfile.Description(profile);
+        if (description is not null && StandardIccDescriptions.Contains(description, StringComparer.OrdinalIgnoreCase))
+            return RuleOutcome.Keep;
+        return new RuleOutcome.Match(Category.Camera, rule.Id,
+            description is null ? "colour profile" : $"colour profile \"{description}\"");
+    }
 
     static bool Glob(string pattern, string value) =>
         pattern.EndsWith('*')
