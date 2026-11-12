@@ -41,7 +41,10 @@ public static class FileStripper
         {
             // A leftover temp (or a link planted in its place) is removed, then the temp is created fresh.
             File.Delete(temp);
-            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write))
+            // Owner-only from the first byte; the original's mode is applied once the content is complete.
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            using (var stream = new FileStream(temp, options))
             {
                 created = true;
                 stream.Write(bytes);
