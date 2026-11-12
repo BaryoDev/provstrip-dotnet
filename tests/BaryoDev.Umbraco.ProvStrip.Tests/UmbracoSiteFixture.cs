@@ -18,6 +18,11 @@ public class UmbracoSiteFixture : WebApplicationFactory<Program>, IAsyncLifetime
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(dataDirectory);
+        // Each fixture gets its own content root, so Umbraco's TEMP (MainDom lock, Examine indexes), logs and
+        // anything it writes back to appsettings stay out of the repository and out of other runs' way.
+        builder.UseContentRoot(dataDirectory);
+        // Umbraco generates and saves an imaging key when none is set. A random one per run means it never writes.
+        builder.UseSetting("Umbraco:CMS:Imaging:HMACSecretKey", Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64)));
         var db = Path.Combine(dataDirectory, "Umbraco.sqlite.db");
         builder.UseSetting("ConnectionStrings:umbracoDbDSN", $"Data Source={db};Cache=Shared;Foreign Keys=True;Pooling=True");
         builder.UseSetting("ConnectionStrings:umbracoDbDSN_ProviderName", "Microsoft.Data.Sqlite");

@@ -27,15 +27,18 @@ internal sealed class ScanStore(IScopeProvider scopes) : IScanStore
         return Task.FromResult(row is null ? null : ToRecord(row));
     }
 
+    // One statement that writes first. A read then a write in one SQLite transaction can deadlock against
+    // another transaction doing the same, and NPoco's default command timeout waits forever.
     public Task<ScanRecord> RequestAsync()
     {
         using var scope = scopes.CreateScope();
-        var busy = scope.Database.ExecuteScalar<int>($"SELECT COUNT(*) FROM {Table} WHERE State IN (@0, @1)",
-            nameof(ScanState.Requested), nameof(ScanState.Running));
+        var inserted = scope.Database.Execute(
+            $"INSERT INTO {Table} (State, CursorId, Total, Checked, WithFindings) SELECT @0, 0, 0, 0, 0 " +
+            $"WHERE NOT EXISTS (SELECT 1 FROM {Table} WHERE State IN (@1, @2))",
+            nameof(ScanState.Requested), nameof(ScanState.Requested), nameof(ScanState.Running));
         // Faulted task rather than a throw, so callers that await or hold the task both see it.
-        if (busy > 0) return Task.FromException<ScanRecord>(new ScanRunningException());
-        var row = new ScanRow { State = nameof(ScanState.Requested) };
-        scope.Database.Insert(row);
+        if (inserted == 0) return Task.FromException<ScanRecord>(new ScanRunningException());
+        var row = scope.Database.First<ScanRow>($"SELECT * FROM {Table} ORDER BY Id DESC");
         scope.Complete();
         return Task.FromResult(ToRecord(row));
     }

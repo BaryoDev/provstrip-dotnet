@@ -33,10 +33,15 @@ internal sealed class FindingStore(IScopeProvider scopes) : IFindingStore
 
     public Task ReplaceAsync(Guid mediaKey, string hash, IReadOnlyList<FindingRecord> findings)
     {
+        // The skip lookup reads in its own scope, so the write scope below starts with a write. A read then a
+        // write in one SQLite transaction can deadlock against another doing the same.
+        HashSet<string> skipped;
+        using (var read = scopes.CreateScope(autoComplete: true))
+            skipped = read.Database
+                .Fetch<string>($"SELECT DISTINCT Category FROM {Table} WHERE ContentHash = @0 AND Status = @1", hash, nameof(FindingStatus.Skipped))
+                .ToHashSet(StringComparer.Ordinal);
+
         using var scope = scopes.CreateScope();
-        var skipped = scope.Database
-            .Fetch<string>($"SELECT DISTINCT Category FROM {Table} WHERE ContentHash = @0 AND Status = @1", hash, nameof(FindingStatus.Skipped))
-            .ToHashSet(StringComparer.Ordinal);
         scope.Database.Execute($"DELETE FROM {Table} WHERE MediaKey = @0", mediaKey);
         var now = DateTime.UtcNow;
         foreach (var f in findings)
