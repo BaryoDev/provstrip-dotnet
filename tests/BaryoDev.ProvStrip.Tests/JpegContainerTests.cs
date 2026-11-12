@@ -74,4 +74,32 @@ public class JpegContainerTests
 
     [Fact] public void MissingSoiThrows() =>
         Should.Throw<ProvStripFormatException>(() => Jpeg.ReadSegments(new byte[] { 0xFF, 0xD9 }));
+
+    static Finding OnlyFinding(byte[] jpeg) => ProvStripEngine.Inspect(jpeg).Findings.ShouldHaveSingleItem();
+
+    static readonly byte[] AdobeApp14 = [.. "Adobe"u8, 0, 100, 0, 0, 0, 0, 1];
+
+    [Fact] public void ExactAdobeApp14IsKept() =>
+        ProvStripEngine.Inspect(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xEE, AdobeApp14)).IsClean.ShouldBeTrue();
+
+    [Fact] public void AdobeApp14WithExtraBytesIsAFinding() =>
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xEE, [.. AdobeApp14, .. "hidden"u8]))
+            .ShouldSatisfyAllConditions(f => f.Label().ShouldBe("APP14"), f => f.CanDelete.ShouldBeTrue());
+
+    [Fact] public void JfifWithExtraBytesIsAFinding() =>
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE0, [.. "JFIF"u8, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, .. "hidden"u8]))
+            .Label().ShouldBe("APP0");
+
+    [Fact] public void JfxxIsAFinding() =>
+        OnlyFinding(Bytes.InsertJpegSegment(Fixtures.Read("clean.jpg"), 2, 0xE0, [.. "JFXX"u8, 0, 0x10, 0xFF, 0xD8, 0xFF, 0xD9]))
+            .Label().ShouldBe("APP0");
+
+    [Fact] public void MpfTrailerWithExifIsAFinding()
+    {
+        var input = Fixtures.Read("mpf-trailer.jpg");
+        var trailer = Jpeg.ReadSegments(input).Single(s => s.Label == "TRAILER");
+        var withExif = Bytes.InsertJpegSegment(input, trailer.Start + 2, 0xE1, [.. "Exif"u8, 0, 0, .. "MM"u8, 0, 42, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0]);
+        OnlyFinding(withExif).ShouldSatisfyAllConditions(
+            f => f.Label().ShouldBe("TRAILER"), f => f.Category.ShouldBe(Category.Unknown), f => f.CanDelete.ShouldBeTrue());
+    }
 }

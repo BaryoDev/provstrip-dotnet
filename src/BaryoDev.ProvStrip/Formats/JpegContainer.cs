@@ -81,15 +81,49 @@ internal sealed class JpegContainer : IContainer
         throw new ProvStripFormatException("JPEG has no EOI marker", bytes.Length);
     }
 
+    // A keyword alone is not enough: the fixed layouts are checked so no extra bytes ride along.
     public bool IsStructural(Segment segment, ReadOnlySpan<byte> bytes) => segment.Label switch
     {
         "SOI" or "DHT" or "DQT" or "DRI" or "DAC" or "DNL" or "SOS" or "EOI" => true,
-        "APP0" => segment.Keyword is "JFIF" or "JFXX",
-        "APP14" => segment.Keyword == "Adobe",
+        "APP0" => segment.Keyword == "JFIF" && IsExactJfif(PayloadSpan(segment, bytes)),
+        "APP14" => segment.Keyword == "Adobe" && PayloadSpan(segment, bytes).Length == 12,
         "APP2" => segment.Keyword == "MPF",
-        Trailer => ReadSegments(bytes.ToArray()).Any(s => s.Label == "APP2" && s.Keyword == "MPF"),
+        Trailer => HasMpf(bytes) && TrailerHoldsOnlyImages(bytes[segment.Start..segment.End]),
         var l => l.StartsWith("SOF", StringComparison.Ordinal),
     };
+
+    // "JFIF\0", version, units, densities, then a thumbnail of exactly width * height * 3 bytes.
+    static bool IsExactJfif(ReadOnlySpan<byte> payload) =>
+        payload.Length >= 14 && payload.Length == 14 + 3 * payload[12] * payload[13];
+
+    ReadOnlySpan<byte> PayloadSpan(Segment segment, ReadOnlySpan<byte> bytes) =>
+        bytes.Slice(segment.Start + 4, BinaryPrimitives.ReadUInt16BigEndian(bytes[(segment.Start + 2)..]) - 2);
+
+    bool HasMpf(ReadOnlySpan<byte> bytes) => ReadSegments(bytes.ToArray()).Any(s => s.Label == "APP2" && s.Keyword == "MPF");
+
+    // The images after an MPF primary are JPEGs too, and can carry their own metadata. The trailer is kept only
+    // when every one of them is nothing but image structure.
+    bool TrailerHoldsOnlyImages(ReadOnlySpan<byte> trailer)
+    {
+        var rest = trailer.ToArray();
+        while (rest.Length > 0)
+        {
+            if (!Sniff(rest)) return false;
+            IReadOnlyList<Segment> segments;
+            try
+            {
+                segments = ReadSegments(rest);
+            }
+            catch (ProvStripFormatException)
+            {
+                return false;
+            }
+            foreach (var s in segments)
+                if (s.Label != Trailer && !IsStructural(s, rest)) return false;
+            rest = segments[^1].Label == Trailer ? rest[segments[^1].Start..] : [];
+        }
+        return true;
+    }
 
     public bool IsSafeToDrop(Segment segment) =>
         segment.Label is "COM" or Trailer || segment.Label.StartsWith("APP", StringComparison.Ordinal);

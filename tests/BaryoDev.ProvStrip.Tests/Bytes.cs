@@ -31,4 +31,8 @@ internal static class Bytes
         var clean = Fixtures.Read("clean.png");
         return [.. clean[..^12], .. PngChunk(type, data), .. clean[^12..]];
     }
+
+    /// <summary>Inserts one marker segment with the given payload at a byte offset.</summary>
+    public static byte[] InsertJpegSegment(byte[] jpeg, int at, byte marker, byte[] payload) =>
+        [.. jpeg[..at], 0xFF, marker, (byte)((payload.Length + 2) >> 8), (byte)(payload.Length + 2), .. payload, .. jpeg[at..]];
 }
