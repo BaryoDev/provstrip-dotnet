@@ -1,6 +1,15 @@
+using BaryoDev.ProvStrip.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Umbraco.Cms.Core;
+using Umbraco.Cms.Core.IO;
+using Umbraco.Cms.Core.Media;
+using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.PropertyEditors;
+using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Core.Strings;
+using Umbraco.Extensions;
 
 namespace BaryoDev.Umbraco.ProvStrip.Tests;
 
@@ -39,6 +48,59 @@ public class UmbracoSiteFixture : WebApplicationFactory<Program>, IAsyncLifetime
     public HttpClient AnonymousClient() => CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
     public T Resolve<T>() where T : notnull => Services.GetRequiredService<T>();
+
+    /// <summary>Creates a media item with this file, the way code or an import would.</summary>
+    public Task<IMedia> UploadAsync(byte[] bytes, string fileName, string mediaType = Constants.Conventions.MediaTypes.Image)
+    {
+        var mediaService = Resolve<IMediaService>();
+        var media = mediaService.CreateMedia(Path.GetFileNameWithoutExtension(fileName), Constants.System.Root, mediaType);
+        using var stream = new MemoryStream(bytes);
+        media.SetValue(Resolve<MediaFileManager>(), Resolve<MediaUrlGeneratorCollection>(), Resolve<IShortStringHelper>(),
+            Resolve<IContentTypeBaseServiceProvider>(), Constants.Conventions.Media.File, fileName, stream);
+        var saved = mediaService.Save(media);
+        if (!saved.Success) throw new InvalidOperationException($"Could not save {fileName}: {saved.Result}");
+        return Task.FromResult(media);
+    }
+
+    public Task<IMedia> UploadAsync(string fixtureName) => UploadAsync(Fixtures.Read(fixtureName), fixtureName);
+
+    public IMedia Reload(IMedia media) => Resolve<IMediaService>().GetById(media.Key)!;
+
+    public string UrlOf(IMedia media) =>
+        media.TryGetMediaPath(Constants.Conventions.Media.File, Resolve<MediaUrlGeneratorCollection>(), out var path)
+            ? path! : throw new InvalidOperationException("media has no file");
+
+    public string RelativePathOf(IMedia media) => Resolve<MediaFileManager>().FileSystem.GetRelativePath(UrlOf(media));
+
+    public Task<byte[]> ReadMediaFileAsync(IMedia media)
+    {
+        using var stream = Resolve<MediaFileManager>().FileSystem.OpenFile(RelativePathOf(media));
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return Task.FromResult(copy.ToArray());
+    }
+
+    /// <summary>A resize URL Umbraco will honour, signed when an imaging key is set.</summary>
+    public string CropUrl(IMedia media, int width) =>
+        Resolve<IImageUrlGenerator>().GetImageUrl(new ImageUrlGenerationOptions(UrlOf(media)) { Width = width })!;
+
+    /// <summary>camera.jpg with c2pa.jpg's APP11 (C2PA) segments inserted after SOI: provenance and camera data in one file.</summary>
+    public static byte[] MixedJpeg()
+    {
+        var c2pa = Fixtures.Read("c2pa.jpg");
+        var app11 = new List<byte>();
+        for (var i = 2; i + 4 <= c2pa.Length && c2pa[i] == 0xFF && c2pa[i + 1] != 0xDA;)
+        {
+            var length = (c2pa[i + 2] << 8) | c2pa[i + 3];
+            if (c2pa[i + 1] == 0xEB) app11.AddRange(c2pa[i..(i + 2 + length)]);
+            i += 2 + length;
+        }
+        var camera = Fixtures.Read("camera.jpg");
+        return [.. camera[..2], .. app11, .. camera[2..]];
+    }
+
+    /// <summary>A minimal PDF, for a non-image upload.</summary>
+    public static byte[] Pdf() => "%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n"u8.ToArray();
 
     public async Task InitializeAsync()
     {

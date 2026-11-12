@@ -1,4 +1,5 @@
 using BaryoDev.Umbraco.ProvStrip.Data;
+using BaryoDev.Umbraco.ProvStrip.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -15,6 +16,7 @@ public sealed class ProvStripComposer : IComposer
         // Stateless over the scope provider, so one instance serves every request and the background job.
         services.AddSingleton<IFindingStore, FindingStore>();
         services.AddSingleton<IScanStore, ScanStore>();
+        services.AddSingleton<IMediaProvStrip, MediaProvStrip>();
         return services;
     }
 }
