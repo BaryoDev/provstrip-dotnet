@@ -11,6 +11,9 @@
     <ProjectReference Include="..\..\src\BaryoDev.ProvStrip\BaryoDev.ProvStrip.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="../fixtures/**" CopyToOutputDirectory="PreserveNewest" LinkBase="fixtures" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="Shouldly" />
     <Using Include="BaryoDev.ProvStrip" />
