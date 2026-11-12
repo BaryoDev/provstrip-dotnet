@@ -132,4 +132,16 @@ public class SvgContainerTests
 
     [Fact] public void MismatchedEndTagThrows() =>
         Should.Throw<ProvStripFormatException>(() => Find($"""<svg {SvgNs}><g></svg>"""));
+
+    [Fact] public void StandardSvgDoctypeIsKept() =>
+        Find($"""<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg {SvgNs}/>""").ShouldBeEmpty();
+
+    [Fact] public void OtherExternalDoctypeIsAnUnknown() =>
+        Find($"""<!DOCTYPE svg SYSTEM "http://example.com/x.dtd"><svg {SvgNs}/>""").ShouldHaveSingleItem().Segment.Label.ShouldBe("#doctype");
+
+    [Fact] public void XmlDeclarationWithExtraContentIsAnInstruction() =>
+        Find($"""<?xml version="1.0" generator="Tool"?><svg {SvgNs}/>""").ShouldHaveSingleItem().Segment.Label.ShouldBe("#pi");
+
+    [Fact] public void XmlDeclarationAfterTheStartIsAnInstruction() =>
+        Find($"""<?xml version="1.0"?><svg {SvgNs}><?xml version="1.0"?></svg>""").ShouldHaveSingleItem().Segment.Label.ShouldBe("#pi");
 }

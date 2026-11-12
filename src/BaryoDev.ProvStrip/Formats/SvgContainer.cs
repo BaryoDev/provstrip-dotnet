@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace BaryoDev.ProvStrip.Formats;
 
@@ -58,13 +59,16 @@ internal sealed class SvgContainer : IContainer
             else if (b[i..].StartsWith("<?"u8))
             {
                 var end = After(b, i + 2, "?>"u8, "unclosed processing instruction", i);
-                if (!IsXmlDeclaration(b[(i + 2)..])) segments.Add(new Segment(i, end - i, "#pi"));
+                var atStart = i == 0 || (i == 3 && b.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]));
+                if (!(atStart && XmlDeclaration.IsMatch(Encoding.UTF8.GetString(b[i..end]))))
+                    segments.Add(new Segment(i, end - i, "#pi"));
                 i = end;
             }
             else if (b[i..].StartsWith("<!DOCTYPE"u8))
             {
                 var (end, subset) = SkipDoctype(b, i);
-                if (subset) segments.Add(new Segment(i, end - i, "#doctype"));
+                if (subset || !PlainDoctype.IsMatch(Encoding.UTF8.GetString(b[i..end])))
+                    segments.Add(new Segment(i, end - i, "#doctype"));
                 i = end;
             }
             else if (b[i..].StartsWith("<!"u8)) throw new ProvStripFormatException("unexpected declaration", i);
@@ -198,8 +202,14 @@ internal sealed class SvgContainer : IContainer
         return NamespaceLabel(name, Resolve(prefix, scope), prefix, local, insideLabelled);
     }
 
-    static bool IsXmlDeclaration(ReadOnlySpan<byte> afterOpen) =>
-        afterOpen.StartsWith("xml"u8) && afterOpen.Length > 3 && (IsSpace(afterOpen[3]) || afterOpen[3] == '?');
+    // Only the declaration's own pseudo-attributes, so nothing else can ride in it.
+    static readonly Regex XmlDeclaration = new(
+        """^<\?xml(\s+(version|encoding|standalone)\s*=\s*("[^"]*"|'[^']*'))*\s*\?>$""", RegexOptions.CultureInvariant);
+
+    // A bare doctype or the W3C SVG one. Any other external DTD could define what this scanner cannot see.
+    static readonly Regex PlainDoctype = new(
+        """^<!DOCTYPE\s+svg(\s+PUBLIC\s+["']-//W3C//DTD SVG 1\.(0|1|1 Basic|1 Tiny)//EN["'](\s+["'][^"']*["'])?)?\s*>$""",
+        RegexOptions.CultureInvariant);
 
     // The doctype may hold an internal subset in brackets, with comments, processing instructions and quoted
     // strings inside it that can contain any of [ ] > ' ".
