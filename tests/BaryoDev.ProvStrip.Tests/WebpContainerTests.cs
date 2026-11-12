@@ -89,4 +89,17 @@ public class WebpContainerTests
         finding.Description.ShouldBe("unknown TRAILER segment");
         ProvStripEngine.Strip(input, [finding]).Output.ShouldBe(Fixtures.Read("clean.webp"));
     }
+
+    [Fact] public void AnimationFrameWithExtraChunkIsAnUnknownThatStays()
+    {
+        var input = Fixtures.Read("animated.webp");
+        var frame = Webp.ReadSegments(input).First(s => s.Label == "ANMF");
+        byte[] extra = [.. "XMP "u8, 6, 0, 0, 0, .. "hidden"u8];
+        var size = BinaryPrimitives.ReadUInt32LittleEndian(input.AsSpan(frame.Start + 4));
+        var output = (byte[])[.. input[..frame.End], .. extra, .. input[frame.End..]];
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(frame.Start + 4), size + (uint)extra.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(4), (uint)(output.Length - 8));
+        ProvStripEngine.Inspect(output).Findings.Where(f => f.Segment.Label == "ANMF").ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            f => f.Segment.Label.ShouldBe("ANMF"), f => f.Category.ShouldBe(Category.Unknown), f => f.CanDelete.ShouldBeFalse());
+    }
 }
