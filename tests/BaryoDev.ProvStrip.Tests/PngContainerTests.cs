@@ -1,0 +1,70 @@
+using BaryoDev.ProvStrip.Rules;
+
+namespace BaryoDev.ProvStrip.Tests;
+
+public class PngContainerTests
+{
+    static readonly PngContainer Png = new();
+
+    static IReadOnlyList<Segment> Segments(byte[] file) => Png.ReadSegments(file);
+    static IReadOnlyList<Segment> Segments(string name) => Segments(Fixtures.Read(name));
+
+    static byte[] ConcatKept(byte[] input, IEnumerable<Segment> segs, string dropLabel) =>
+        segs.Where(s => s.Label != dropLabel).SelectMany(s => input[s.Start..s.End]).ToArray();
+
+    [Fact] public void CleanPngIsAllStructural() =>
+        Segments("clean.png").ShouldAllBe(s => Png.IsStructural(s, Fixtures.Read("clean.png")));
+
+    [Fact] public void SegmentsCoverTheWholeFileAfterTheSignature()
+    {
+        var segs = Segments("c2pa.png");
+        segs[0].Start.ShouldBe(8);
+        segs.Zip(segs.Skip(1)).ShouldAllBe(p => p.First.End == p.Second.Start);
+        segs[^1].End.ShouldBe(Fixtures.Read("c2pa.png").Length);
+    }
+
+    [Fact] public void C2paPngHasCaBX() => Segments("c2pa.png").Select(s => s.Label).ShouldContain("caBX");
+
+    [Fact] public void TextChunksCarryTheirKeyword() =>
+        Segments("tool-xmp.png").Where(s => s.Label is "iTXt" or "tEXt").Select(s => s.Keyword).ShouldBe(["XML:com.adobe.xmp", "Software"]);
+
+    [Fact] public void PayloadIsTheChunkData()
+    {
+        var input = Fixtures.Read("tool-xmp.png");
+        var software = Segments(input).Single(s => s.Label == "tEXt");
+        Png.Payload(software, input).ToArray().ShouldBe("Software\0Fixture Tool 1.0"u8.ToArray());
+    }
+
+    [Fact] public void DroppingCaBXKeepsEveryOtherChunkByteForByte()
+    {
+        var input = Fixtures.Read("c2pa.png");
+        var segs = Segments("c2pa.png");
+        var output = Png.Rewrite(input, segs.Where(s => s.Label == "caBX").Select(s => new SegmentEdit(s, null)).ToList());
+        output[..8].ShouldBe(input[..8]);
+        output[8..].ShouldBe(ConcatKept(input, segs, "caBX"));
+    }
+
+    [Fact] public void ReplacementGetsAValidCrcAndKeepsItsPlace()
+    {
+        var input = Fixtures.Read("camera.png");
+        var exif = Segments(input).Single(s => s.Label == "eXIf");
+        var replacement = Exif.OrientationOnly(Png.Payload(exif, input).Span)!;
+        var output = Png.Rewrite(input, [new SegmentEdit(exif, replacement)]);
+        var after = Segments(output);
+        after.Select(s => s.Label).ShouldBe(Segments(input).Select(s => s.Label));
+        Png.Payload(after.Single(s => s.Label == "eXIf"), output).ToArray().ShouldBe(replacement);
+    }
+
+    [Fact] public void BadCrcNamesTheOffset() =>
+        Should.Throw<ProvStripFormatException>(() => Segments("bad-crc.png")).Offset.ShouldBe(8);
+
+    [Fact] public void TruncatedThrows() => Should.Throw<ProvStripFormatException>(() => Segments("truncated.png"));
+
+    [Fact] public void NotAPngThrows() => Should.Throw<ProvStripFormatException>(() => Segments("clean.jpg"));
+
+    [Fact] public void AncillaryUnknownIsSafeToDrop() => Png.IsSafeToDrop(new Segment(0, 12, "prVt")).ShouldBeTrue();
+
+    [Fact] public void CriticalUnknownIsNot() => Png.IsSafeToDrop(new Segment(0, 12, "QXQX")).ShouldBeFalse();
+
+    [Fact] public void IccpIsNotStructural() => Png.IsStructural(new Segment(0, 12, "iCCP"), []).ShouldBeFalse();
+}
