@@ -69,4 +69,15 @@ public class GuaranteeTests
         var path = Temp.Copy("c2pa.png", @as: "photo.jpg");
         FileStripper.Run(path, new StripPolicy(CategoryMode.Auto)).Format.ShouldBe("png");
     }
+
+    static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "provstrip-dotnet.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("repository root not found");
+    }
+
+    [Theory, InlineData("icon.png"), InlineData("logo.svg"), InlineData("assets/header.svg")]
+    public void ShippedArtIsClean(string path) =>
+        ProvStripEngine.Inspect(File.ReadAllBytes(Path.Combine(RepoRoot(), path))).IsClean.ShouldBeTrue();
 }

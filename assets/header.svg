@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280">
+  <rect width="1200" height="280" rx="28" fill="#0FA3B1"/>
+  <g transform="translate(76 46) scale(1.5)">
+  <rect x="2" y="2" width="124" height="124" rx="28" fill="#0FA3B1"/>
+  <path d="M28 38 H76 A8 8 0 0 1 84 46 V94 A8 8 0 0 1 76 102 H28 A8 8 0 0 1 20 94 V46 A8 8 0 0 1 28 38 Z" fill="#FFFFFF"/>
+  <path d="M28 92 L46 66 L58 80 L66 72 L78 92 Z" fill="#0FA3B1"/>
+  <path d="M58 54 A8 8 0 1 0 74 54 A8 8 0 1 0 58 54 Z" fill="#FFC53D"/>
+  <path d="M80 28 L92 16 H108 A4 4 0 0 1 112 20 V36 A4 4 0 0 1 108 40 H92 Z" fill="#FFC53D"/>
+  <path d="M95 28 A5 5 0 1 0 105 28 A5 5 0 1 0 95 28 Z" fill="#0FA3B1"/></g>
+  <text x="330" y="150" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="84" font-weight="700" fill="#FFFFFF">ProvStrip</text>
+  <text x="334" y="206" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="34" fill="#FFFFFF">Cut attribution out of images, keep every pixel</text>
+  <text x="1140" y="250" text-anchor="end" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#FFC53D">baryo.dev</text>
+</svg>
