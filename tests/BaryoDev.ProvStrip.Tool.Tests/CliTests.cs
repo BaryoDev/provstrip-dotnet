@@ -37,6 +37,21 @@ public class CliTests
 
     [Fact] public void KeepUnknownExitsZero() => Run("strip", "-i", Temp.Copy("unknown-ancillary.png"), "--keep-unknown").Code.ShouldBe(0);
 
+    // An output path names one file, so it needs one input file. A directory or glob would write every match to it.
+    [Fact] public void DirectoryWithAnOutputIsAUsageError()
+    {
+        var d = Temp.Dir("c2pa.png", "c2pa.jpg");
+        var output = Path.Combine(d, "out.png");
+        Run("strip", d, output).ShouldSatisfyAllConditions(r => r.Code.ShouldBe(64), r => r.Err.ShouldContain("one input file"));
+        File.Exists(output).ShouldBeFalse();
+    }
+
+    [Fact] public void GlobWithAnOutputIsAUsageError()
+    {
+        var d = Temp.Dir("c2pa.png");
+        Run("strip", Path.Combine(d, "*.png"), Path.Combine(d, "out.png")).Code.ShouldBe(64);
+    }
+
     [Fact] public void DirectoryIsWalked()
     {
         var d = Temp.Dir("c2pa.png", "c2pa.jpg", "clean.webp");

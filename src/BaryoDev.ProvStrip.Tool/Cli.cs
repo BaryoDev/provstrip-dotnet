@@ -79,6 +79,8 @@ public static class Cli
             if (inputs.Count > 2) return Fail(stderr, "more than one input needs -i");
             output = inputs.Count == 2 ? inputs[1] : null;
             inputs.RemoveRange(1, inputs.Count - 1);
+            // A directory or glob would write every match to the one output path.
+            if (output is not null && !File.Exists(inputs[0])) return Fail(stderr, "an output path needs one input file");
         }
 
         RuleSet? rules = null;

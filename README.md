@@ -86,7 +86,8 @@ options: --provenance auto|flag   (default auto for strip)
          --version, --help
 ```
 
-A directory means every supported file below it. More than one input needs `-i`.
+A directory means every supported file below it. More than one input needs `-i`, and an output path needs
+one input file.
 
 | Exit code | Meaning |
 | --- | --- |
