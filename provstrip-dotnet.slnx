@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BaryoDev.ProvStrip/BaryoDev.ProvStrip.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BaryoDev.ProvStrip.Tests/BaryoDev.ProvStrip.Tests.csproj" />
+  </Folder>
+</Solution>

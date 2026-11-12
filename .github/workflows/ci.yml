@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The gitleaks binary is MIT licensed; the action needs a paid key for an organization. The
+  # download is checksummed before anything runs.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          VERSION=8.28.0
+          SHA256=a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+          curl -sSLf -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xz -C /usr/local/bin -f gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+      - name: Scan
+        run: gitleaks detect --source . --config .gitleaks.toml --redact --verbose
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet test provstrip-dotnet.slnx --configuration Release
+
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet pack provstrip-dotnet.slnx --configuration Release -o artifacts
+      # NuGet packs an empty description as the literal "Package Description", which is what
+      # nuget.org then shows.
+      - name: Listing metadata is real
+        run: |
+          cd artifacts
+          for P in *.nupkg; do
+            unzip -p "$P" '*.nuspec' > spec.xml
+            if grep -q '<description>Package Description</description>' spec.xml; then
+              echo "$P: description is still NuGet's placeholder"; exit 1
+            fi
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nupkg
+          path: artifacts/*.nupkg

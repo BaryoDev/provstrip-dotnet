@@ -1,0 +1,14 @@
+# Secret scanning config. The default rules catch provider tokens. The extra rule catches a
+# private key, which is the realistic leak here: the test files are signed with a certificate made
+# at fixture time, and its key must never be committed.
+
+title = "provstrip-dotnet"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-key-block"
+description = "PEM private key"
+regex = '''-----BEGIN (EC |RSA |ENCRYPTED )?PRIVATE KEY-----'''
+tags = ["key"]
