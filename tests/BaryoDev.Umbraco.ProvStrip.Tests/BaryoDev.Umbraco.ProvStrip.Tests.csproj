@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <ProjectReference Include="../../src/BaryoDev.Umbraco.ProvStrip/BaryoDev.Umbraco.ProvStrip.csproj" />
+    <ProjectReference Include="../BaryoDev.Umbraco.ProvStrip.TestSite/BaryoDev.Umbraco.ProvStrip.TestSite.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../BaryoDev.ProvStrip.Tests/Fixtures.cs" Link="Shared/Fixtures.cs" />
+    <None Include="../fixtures/**" CopyToOutputDirectory="PreserveNewest" LinkBase="fixtures" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,26 @@
+{
+  "id": "BaryoDev.ProvStrip",
+  "name": "ProvStrip",
+  "version": "0.1.0",
+  "allowTelemetry": false,
+  "extensions": [
+    {
+      "type": "workspaceInfoApp",
+      "alias": "BaryoDev.ProvStrip.MediaInfo",
+      "name": "ProvStrip media info",
+      "element": "/App_Plugins/BaryoDev.ProvStrip/provstrip-media-info.js",
+      "weight": 50,
+      "meta": {},
+      "conditions": [{ "alias": "Umb.Condition.WorkspaceAlias", "match": "Umb.Workspace.Media" }]
+    },
+    {
+      "type": "dashboard",
+      "alias": "BaryoDev.ProvStrip.Dashboard",
+      "name": "ProvStrip dashboard",
+      "element": "/App_Plugins/BaryoDev.ProvStrip/provstrip-dashboard.js",
+      "weight": 10,
+      "meta": { "label": "ProvStrip", "pathname": "provstrip" },
+      "conditions": [{ "alias": "Umb.Condition.SectionAlias", "match": "Umb.Section.Media" }]
+    }
+  ]
+}

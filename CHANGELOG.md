@@ -12,3 +12,7 @@ First release.
   per-category `auto` or `flag`, `--keep-unknown`, `--rules` and `--json`.
 - `BaryoDev.ProvStrip.Build`: a `dotnet pack` step that checks every packed image, `PackageIcon` included. Fails
   the pack by default, or strips the packed copy with `ProvStripProvenance=auto` and `ProvStripCamera=auto`.
+- `BaryoDev.Umbraco.ProvStrip`: checks every image saved to the Umbraco 17 and 18 media library. Labels AI
+  attribution and camera data with Delete and Skip on the media item, or strips them on upload with `Auto`. A
+  dashboard scans the existing library in the background and offers Delete all. Delete writes the file in place
+  and keeps its URL.
