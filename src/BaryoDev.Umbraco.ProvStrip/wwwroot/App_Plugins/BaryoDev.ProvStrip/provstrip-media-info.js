@@ -77,8 +77,16 @@ export default class ProvStripMediaInfoElement extends UmbLitElement {
           <uui-button look="secondary" label="Skip" ?disabled=${this._busy} @click=${() => this.#act("skip", category)}></uui-button>
         </div>`,
       )}
-      ${this._model.needsLook ? html`<p>Needs a look: ${this._model.needsLook}</p>` : nothing}
+      ${this._model.needsLook
+        ? html`<div class="row">
+            <span class="label">Needs a look: ${this._model.needsLook}</span>
+            ${this._model.hash
+              ? html`<uui-button look="secondary" label="Skip" ?disabled=${this._busy} @click=${() => this.#act("skip", "Unknown")}></uui-button>`
+              : nothing}
+          </div>`
+        : nothing}
       ${rows.length === 0 && !this._model.needsLook ? html`<p class="muted">No AI attribution or camera data found.</p>` : nothing}
+      ${(this._model.removed ?? []).map((line) => html`<p class="muted">${line}</p>`)}
     `;
   }
 }

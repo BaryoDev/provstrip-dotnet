@@ -3,9 +3,12 @@
 import { UmbLitElement } from "@umbraco-cms/backoffice/lit-element";
 import { html, nothing } from "@umbraco-cms/backoffice/external/lit";
 import { UMB_AUTH_CONTEXT } from "@umbraco-cms/backoffice/auth";
+import { umbConfirmModal } from "@umbraco-cms/backoffice/modal";
 import { STYLESHEET, apiFor, categoryOfLabel } from "./shared.js";
 
 const PAGE = 100;
+// The API serves at most this many results per call.
+const MAX_TAKE = 500;
 const POLL_MS = 2000;
 
 export default class ProvStripDashboardElement extends UmbLitElement {
@@ -49,14 +52,23 @@ export default class ProvStripDashboardElement extends UmbLitElement {
     clearTimeout(this.#timer);
     try {
       this._scan = await this.#api.getScan();
-      const page = await this.#api.getResults(0, Math.max(PAGE, this._items.length));
-      this._items = page.items;
-      this._total = page.total;
+      // Reload as many rows as are shown, in calls the API accepts.
+      const want = Math.max(PAGE, this._items.length);
+      const items = [];
+      let total = 0;
+      while (items.length < want) {
+        const page = await this.#api.getResults(items.length, Math.min(MAX_TAKE, want - items.length));
+        items.push(...page.items);
+        total = page.total;
+        if (page.items.length === 0) break;
+      }
+      this._items = items;
+      this._total = total;
       this._error = "";
     } catch (e) {
       this._error = e.message;
     }
-    if (this.#running) this.#timer = setTimeout(() => this.#refresh(), POLL_MS);
+    if (this.#running && this.isConnected) this.#timer = setTimeout(() => this.#refresh(), POLL_MS);
   }
 
   async #more() {
@@ -86,15 +98,22 @@ export default class ProvStripDashboardElement extends UmbLitElement {
 
   #scan = () => this.#run(() => this.#api.startScan());
 
-  // The results list carries no hash, so each action reads the item's current one first.
-  #act = (action, key, category) =>
-    this.#run(async () => {
-      const media = await this.#api.getMedia(key);
-      await this.#api[action](key, category, media.hash);
-    });
+  // Each row carries the hash of the file it was shown for, so a file changed since then is refused, not changed.
+  #act = (action, item, category) => this.#run(() => this.#api[action](item.key, category, item.hash));
 
-  #deleteAll = () =>
-    this.#run(() => this.#api.removeAll(null), "Removing in the background. The list updates as items are cleaned; use Refresh to check.");
+  #deleteAll = async () => {
+    try {
+      await umbConfirmModal(this, {
+        headline: "Delete all",
+        content: `Remove AI attribution and camera data from the ${this._total} listed items? Files are changed in place and there is no undo. Anything you skipped is kept.`,
+        color: "danger",
+        confirmLabel: "Delete all",
+      });
+    } catch {
+      return; // Cancelled.
+    }
+    await this.#run(() => this.#api.removeAll(null), "Removing in the background. The list updates as items are cleaned; use Refresh to check.");
+  };
 
   render() {
     return html`${STYLESHEET}
@@ -154,13 +173,20 @@ export default class ProvStripDashboardElement extends UmbLitElement {
             <span class="label">${label}</span>
             ${category
               ? html`<span class="actions">
-                  <uui-button look="primary" color="danger" label="Delete" ?disabled=${this._busy} @click=${() => this.#act("remove", item.key, category)}></uui-button>
-                  <uui-button look="secondary" label="Skip" ?disabled=${this._busy} @click=${() => this.#act("skip", item.key, category)}></uui-button>
+                  <uui-button look="primary" color="danger" label="Delete" ?disabled=${this._busy} @click=${() => this.#act("remove", item, category)}></uui-button>
+                  <uui-button look="secondary" label="Skip" ?disabled=${this._busy} @click=${() => this.#act("skip", item, category)}></uui-button>
                 </span>`
               : nothing}
           </div>`;
         })}
-        ${item.needsLook ? html`<div class="row muted">Needs a look: ${item.needsLook}</div>` : nothing}
+        ${item.needsLook
+          ? html`<div class="row">
+              <span class="label muted">Needs a look: ${item.needsLook}</span>
+              ${item.hash
+                ? html`<uui-button look="secondary" label="Skip" ?disabled=${this._busy} @click=${() => this.#act("skip", item, "Unknown")}></uui-button>`
+                : nothing}
+            </div>`
+          : nothing}
       </td>
     </tr>`;
   }

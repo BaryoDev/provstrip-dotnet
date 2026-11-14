@@ -146,8 +146,16 @@ public class ApiTests(UmbracoSiteFixture site)
         var media = await site.UploadAsync("c2pa.jpg");
         var found = Body<MediaFindingsModel>(await Api().GetMedia(media.Key), 200);
         found.Labels.ShouldContain(l => l.StartsWith("AI attribution found"));
-        var after = Body<MediaFindingsModel>(await Api().Skip(media.Key, new SkipRequestModel { Category = "Provenance", Hash = found.Hash! }), 200);
-        after.Labels.ShouldNotContain(l => l.StartsWith("AI attribution found"));
+        try
+        {
+            var after = Body<MediaFindingsModel>(await Api().Skip(media.Key, new SkipRequestModel { Category = "Provenance", Hash = found.Hash! }), 200);
+            after.Labels.ShouldNotContain(l => l.StartsWith("AI attribution found"));
+        }
+        finally
+        {
+            // A skip is stored against the file's hash; leave none behind for other tests' copies of c2pa.jpg.
+            await site.Resolve<IFindingStore>().DeleteForMediaAsync(media.Key);
+        }
     }
 
     [Fact] public async Task SkipWithAnotherItemsHashGets409()

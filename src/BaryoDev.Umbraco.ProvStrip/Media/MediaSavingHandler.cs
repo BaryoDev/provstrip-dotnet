@@ -21,7 +21,9 @@ internal sealed class MediaSavingHandler(MediaProvStrip strip, ILogger<MediaSavi
             if (!media.IsPropertyDirty(Constants.Conventions.Media.File)) continue;
             try
             {
-                await strip.CheckUploadAsync(media, cancellationToken);
+                var check = await strip.CheckUploadAsync(media, cancellationToken);
+                if (Labels.Removed(check.Findings) is { Count: > 0 } removed)
+                    logger.LogInformation("ProvStrip removed on upload from media {MediaKey}: {Removed}", media.Key, string.Join("; ", removed));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {

@@ -146,7 +146,7 @@ on .NET 10. Install the package and start the site; it creates its two tables on
 
 ### On upload
 
-Every media item saved with a new file is checked before the save completes: backoffice uploads, the Management
+Every media item saved with a new file in its `umbracoFile` property is checked before the save completes: backoffice uploads, the Management
 API, imports and code. Each category is set to `Flag` or `Auto`.
 
 - `Flag` (the default) stores the file as uploaded. The item's Info view shows a ProvStrip box with one line per
@@ -167,7 +167,10 @@ original elsewhere if you need it. Delete is refused when the file changed since
 and retry.
 
 **Skip** hides a label. It is stored against the file's content hash, so it holds for that exact file, and for
-identical copies of it elsewhere in the library, and it no longer applies once the file changes.
+identical copies of it elsewhere in the library, and it no longer applies once the file changes. An unknown
+segment can be skipped too. A missing file or one over `MaxFileBytes` cannot: fix the file or raise the limit.
+
+The Info view also says what was removed, on upload or by Delete, such as "Camera data removed (GPS)".
 
 ### Scanning the library
 
@@ -176,8 +179,10 @@ Media section has **Scan media library**. A background job then checks `ScanBatc
 order, and stores where it stopped, so a restart resumes the scan. Umbraco starts background jobs a few minutes
 after the site starts. The scan changes no file.
 
-Results are listed by folder, each with Delete and Skip. **Delete all** removes AI attribution and camera data from
-every listed item in the background, one item at a time, and leaves any item whose file changed since its check.
+Results are listed by folder, each with Delete and Skip. **Delete all** asks first, then removes AI attribution and
+camera data from every listed item in the background, one item at a time. It keeps whatever was skipped on an item,
+leaves any item whose file changed since its check, and carries on past an item it cannot write. Deleted media and
+media in the recycle bin drop out of the results.
 
 ### Permissions
 

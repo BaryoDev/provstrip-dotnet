@@ -63,16 +63,25 @@ internal sealed class MediaProvStrip(
         var id = idKeyMap.GetIdForKey(mediaKey, UmbracoObjectTypes.Media);
         var media = (id.Success ? mediaService.GetById(id.Result) : null) ?? throw new KeyNotFoundException($"media {mediaKey} not found");
         var read = Read(media);
-        if (read.Bytes is null || read.Hash != expectedHash) throw new StaleFileException();
+        if (read.Bytes is null || read.Hash != expectedHash)
+        {
+            // Record the file as it is now, so the next look shows what is really there, not the finding that went stale.
+            await CheckAsync(media, ct);
+            throw new StaleFileException();
+        }
 
         var policy = new StripPolicy(
             category is null or Category.Provenance ? CategoryMode.Auto : CategoryMode.Flag,
             category is null or Category.Camera ? CategoryMode.Auto : CategoryMode.Flag,
             KeepUnknown: true);
         var decision = policy.Decide(ProvStripEngine.Inspect(read.Bytes));
-        if (decision.Remove.Count == 0) return await CheckAsync(media, ct);
+        var remove = new List<Finding>(decision.Remove.Count);
+        foreach (var f in decision.Remove)
+            // Without a category this is "remove everything", which must not undo a person's Skip.
+            if (category is not null || !await store.IsSkippedAsync(read.Hash, f.Category)) remove.Add(f);
+        if (remove.Count == 0) return await CheckAsync(media, ct);
 
-        var check = await StripAsync(media, read, decision.Remove);
+        var check = await StripAsync(media, read, remove);
         using (ReentryGuard.Enter()) mediaService.Save(media);
         return check;
     }
@@ -114,12 +123,21 @@ internal sealed class MediaProvStrip(
         }
         using (var output = new MemoryStream(result.Output, writable: false))
             files.FileSystem.AddFile(read.Relative!, output, overrideIfExists: true);
-        media.SetValue(Constants.Conventions.Media.Bytes, result.Output.Length);
+        // A custom media type may have no size property; SetValue would throw after the file was already written.
+        if (media.HasProperty(Constants.Conventions.Media.Bytes)) media.SetValue(Constants.Conventions.Media.Bytes, result.Output.Length);
+
+        // Skips belong to the old hash. Carry them to the cleaned file, so removing one category does not bring back
+        // the label a person skipped on another.
+        var skipped = new List<Category>();
+        foreach (var c in Enum.GetValues<Category>())
+            if (await store.IsSkippedAsync(read.Hash!, c)) skipped.Add(c);
 
         var hash = Hash(result.Output);
         var records = Analyze(media.Key, hash, result.Output, out var unknown).Concat(
             result.Removed.Select(f => new FindingRecord(media.Key, hash, f.Category, f.RuleId, f.Description, FindingStatus.Removed))).ToList();
         await store.ReplaceAsync(media.Key, hash, records);
+        foreach (var c in skipped.Where(c => records.Any(r => r.Category == c && r.Status is FindingStatus.Open or FindingStatus.NeedsLook)))
+            await store.SkipAsync(media.Key, hash, c);
         return new MediaCheck(media.Key, read.Path, hash, await store.ForMediaAsync(media.Key), unknown);
     }
 

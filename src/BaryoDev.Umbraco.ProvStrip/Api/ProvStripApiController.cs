@@ -83,8 +83,11 @@ public sealed class ProvStripApiController(
     public async Task<IActionResult> Skip(Guid key, SkipRequestModel request)
     {
         if (!await MayUse(MediaPermissionResource.WithKeys(key))) return Forbidden();
-        if (!TryCategory(request.Category, out var category) || category is null) return CategoryProblem(request.Category);
+        if (!TryCategory(request.Category, out var category, allowUnknown: true) || category is null) return CategoryProblem(request.Category);
         if (Find(key) is null) return NotFoundProblem(key);
+        // A missing or oversized file has no hash; a skip stored against "" would hide every such file.
+        if (string.IsNullOrEmpty(request.Hash))
+            return ProblemResult(StatusCodes.Status400BadRequest, "Nothing to skip", "This item has no readable file. Fix the file, or raise MaxFileBytes for one that is too large.");
         // A skip is stored against a file hash, so only this item's current hash may be skipped.
         if ((await findings.ForMediaAsync(key)).FirstOrDefault()?.ContentHash != request.Hash)
             return ProblemResult(StatusCodes.Status409Conflict, "File changed", "The hash is not this item's current file. Check it again.");
@@ -135,9 +138,13 @@ public sealed class ProvStripApiController(
         foreach (var item in page.Items)
         {
             var media = Find(item.MediaKey);
+            // Deleted or trashed since the rows were written: not something a person can act on.
+            if (media is null || media.Trashed) continue;
             var needsLook = item.Findings.FirstOrDefault(f => f.Status == FindingStatus.NeedsLook)?.Description;
-            items.Add(new MediaFindingsSummaryModel(item.MediaKey, media?.Name ?? "", media is null ? "" : FolderOf(media, folders),
-                Labels.For(item.Findings), needsLook));
+            items.Add(new MediaFindingsSummaryModel(item.MediaKey, media.Name ?? "", FolderOf(media, folders), Labels.For(item.Findings), needsLook)
+            {
+                Hash = item.Findings.FirstOrDefault()?.ContentHash is { Length: > 0 } hash ? hash : null,
+            });
         }
         return Ok(new PagedResultsModel(page.Total, items));
     }
@@ -176,11 +183,13 @@ public sealed class ProvStripApiController(
         return path;
     }
 
-    static bool TryCategory(string? value, out Category? category)
+    /// <summary>Provenance or Camera by name (Unknown too when skipping); empty means both. Numbers and lists are refused.</summary>
+    static bool TryCategory(string? value, out Category? category, bool allowUnknown = false)
     {
         category = null;
         if (string.IsNullOrEmpty(value)) return true;
-        if (Enum.TryParse<Category>(value, ignoreCase: true, out var parsed) && parsed != Category.Unknown)
+        if (!value.All(char.IsLetter)) return false;
+        if (Enum.TryParse<Category>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed) && (allowUnknown || parsed != Category.Unknown))
         {
             category = parsed;
             return true;
@@ -197,11 +206,12 @@ public sealed class ProvStripApiController(
     static ObjectResult ProblemResult(int status, string title, string detail) =>
         new(new ProblemDetails { Status = status, Title = title, Detail = detail }) { StatusCode = status };
 
-    static MediaFindingsModel ToModel(MediaCheck check) => new(check.MediaKey, check.Hash, Labels.For(check.Findings), check.Findings.Select(ToModel).ToList(), check.NeedsLook);
+    static MediaFindingsModel ToModel(MediaCheck check) =>
+        new(check.MediaKey, check.Hash, Labels.For(check.Findings), check.Findings.Select(ToModel).ToList(), check.NeedsLook) { Removed = Labels.Removed(check.Findings) };
 
     static MediaFindingsModel ToModel(Guid key, IReadOnlyList<FindingRecord> rows) =>
         new(key, rows.FirstOrDefault()?.ContentHash, Labels.For(rows), rows.Select(ToModel).ToList(),
-            rows.FirstOrDefault(f => f.Status == FindingStatus.NeedsLook)?.Description);
+            rows.FirstOrDefault(f => f.Status == FindingStatus.NeedsLook)?.Description) { Removed = Labels.Removed(rows) };
 
     static FindingModel ToModel(FindingRecord f) => new(f.Category.ToString(), f.RuleId, f.Description, f.Status.ToString());
 

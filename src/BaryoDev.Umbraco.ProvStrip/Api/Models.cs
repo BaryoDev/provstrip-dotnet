@@ -3,7 +3,10 @@ namespace BaryoDev.Umbraco.ProvStrip.Api;
 public sealed record FindingModel(string Category, string RuleId, string Description, string Status);
 
 /// <summary>What is known about one media item: the labels a person sees, every finding, and the file's hash.</summary>
-public sealed record MediaFindingsModel(Guid Key, string? Hash, IReadOnlyList<string> Labels, IReadOnlyList<FindingModel> Findings, string? NeedsLook);
+public sealed record MediaFindingsModel(Guid Key, string? Hash, IReadOnlyList<string> Labels, IReadOnlyList<FindingModel> Findings, string? NeedsLook)
+{
+    public IReadOnlyList<string> Removed { get; init; } = [];
+}
 
 public sealed class RemoveRequestModel
 {
@@ -31,6 +34,9 @@ public sealed class RemoveAllRequestModel
 public sealed record ScanModel(string State, int Total, int Checked, int WithFindings, DateTime? StartedUtc, DateTime? FinishedUtc);
 
 /// <summary>One item in the scan results. Folder is the path of folder names above it, "" at the root.</summary>
-public sealed record MediaFindingsSummaryModel(Guid Key, string Name, string Folder, IReadOnlyList<string> Labels, string? NeedsLook);
+public sealed record MediaFindingsSummaryModel(Guid Key, string Name, string Folder, IReadOnlyList<string> Labels, string? NeedsLook)
+{
+    public string? Hash { get; init; }
+}
 
 public sealed record PagedResultsModel(int Total, IReadOnlyList<MediaFindingsSummaryModel> Items);

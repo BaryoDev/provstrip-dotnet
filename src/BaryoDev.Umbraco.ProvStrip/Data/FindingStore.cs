@@ -16,6 +16,9 @@ public interface IFindingStore
 
     /// <summary>Media with Open or NeedsLook rows, ordered by key.</summary>
     Task<FindingPage> OpenAsync(int skip, int take);
+
+    /// <summary>Drops every row for the item, for media that was deleted or moved to the recycle bin.</summary>
+    Task DeleteForMediaAsync(Guid mediaKey);
 }
 
 internal sealed class FindingStore(IScopeProvider scopes) : IFindingStore
@@ -46,7 +49,7 @@ internal sealed class FindingStore(IScopeProvider scopes) : IFindingStore
         var now = DateTime.UtcNow;
         foreach (var f in findings)
         {
-            var status = f.Status == FindingStatus.Open && skipped.Contains(f.Category.ToString()) ? FindingStatus.Skipped : f.Status;
+            var status = f.Status is FindingStatus.Open or FindingStatus.NeedsLook && skipped.Contains(f.Category.ToString()) ? FindingStatus.Skipped : f.Status;
             scope.Database.Insert(ToRow(f with { MediaKey = mediaKey, ContentHash = hash, Status = status }, now));
         }
         scope.Complete();
@@ -57,8 +60,9 @@ internal sealed class FindingStore(IScopeProvider scopes) : IFindingStore
     {
         using var scope = scopes.CreateScope();
         var changed = scope.Database.Execute(
-            $"UPDATE {Table} SET Status = @0, UpdatedUtc = @1 WHERE MediaKey = @2 AND ContentHash = @3 AND Category = @4 AND Status IN (@5, @6)",
-            nameof(FindingStatus.Skipped), DateTime.UtcNow, mediaKey, hash, category.ToString(), nameof(FindingStatus.Open), nameof(FindingStatus.Skipped));
+            $"UPDATE {Table} SET Status = @0, UpdatedUtc = @1 WHERE MediaKey = @2 AND ContentHash = @3 AND Category = @4 AND Status IN (@5, @6, @7)",
+            nameof(FindingStatus.Skipped), DateTime.UtcNow, mediaKey, hash, category.ToString(),
+            nameof(FindingStatus.Open), nameof(FindingStatus.Skipped), nameof(FindingStatus.NeedsLook));
         // Nothing open to mark: keep a marker row so the skip still holds for this hash.
         if (changed == 0)
             scope.Database.Insert(ToRow(new FindingRecord(mediaKey, hash, category, "skip", "", FindingStatus.Skipped), DateTime.UtcNow));
@@ -86,6 +90,14 @@ internal sealed class FindingStore(IScopeProvider scopes) : IFindingStore
             items.Add(new MediaFindingsSummary(key, scope.Database
                 .Fetch<FindingRow>($"SELECT * FROM {Table} WHERE MediaKey = @0 ORDER BY Id", key).Select(ToRecord).ToList()));
         return Task.FromResult(new FindingPage(items, total));
+    }
+
+    public Task DeleteForMediaAsync(Guid mediaKey)
+    {
+        using var scope = scopes.CreateScope();
+        scope.Database.Execute($"DELETE FROM {Table} WHERE MediaKey = @0", mediaKey);
+        scope.Complete();
+        return Task.CompletedTask;
     }
 
     static FindingRecord ToRecord(FindingRow r) => new(r.MediaKey, r.ContentHash, Enum.Parse<Category>(r.Category), r.RuleId, r.Description, Enum.Parse<FindingStatus>(r.Status));

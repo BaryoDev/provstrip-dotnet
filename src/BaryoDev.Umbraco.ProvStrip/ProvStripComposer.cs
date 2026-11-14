@@ -15,6 +15,8 @@ public sealed class ProvStripComposer : IComposer
     {
         AddServices(builder.Services);
         builder.AddNotificationAsyncHandler<MediaSavingNotification, MediaSavingHandler>();
+        builder.AddNotificationAsyncHandler<MediaDeletedNotification, MediaRemovedHandler>();
+        builder.AddNotificationAsyncHandler<MediaMovedToRecycleBinNotification, MediaRemovedHandler>();
         // A site's build lists referenced MVC assemblies for it, but not always this one (seen with a project
         // reference). Adding it here maps the Management API controller either way, and only once.
         builder.Services.AddMvcCore().ConfigureApplicationPartManager(manager =>

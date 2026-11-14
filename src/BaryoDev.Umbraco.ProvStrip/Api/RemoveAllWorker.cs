@@ -65,6 +65,11 @@ public sealed class RemoveAllWorker(RemoveAllQueue queue, IFindingStore findings
             {
                 logger.LogInformation("ProvStrip skipped {MediaKey}: {Reason}", key, e.Message);
             }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // Keep going: a run that stops here would stop at the same item every time.
+                logger.LogError(e, "ProvStrip could not clean media {MediaKey} during remove-all", key);
+            }
         }
         return removed;
     }
