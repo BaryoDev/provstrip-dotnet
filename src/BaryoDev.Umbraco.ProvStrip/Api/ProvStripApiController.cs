@@ -78,12 +78,16 @@ public sealed class ProvStripApiController(
     [ProducesResponseType(typeof(MediaFindingsModel), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Skip(Guid key, SkipRequestModel request)
     {
         if (!await MayUse(MediaPermissionResource.WithKeys(key))) return Forbidden();
         if (!TryCategory(request.Category, out var category) || category is null) return CategoryProblem(request.Category);
         if (Find(key) is null) return NotFoundProblem(key);
+        // A skip is stored against a file hash, so only this item's current hash may be skipped.
+        if ((await findings.ForMediaAsync(key)).FirstOrDefault()?.ContentHash != request.Hash)
+            return ProblemResult(StatusCodes.Status409Conflict, "File changed", "The hash is not this item's current file. Check it again.");
         await findings.SkipAsync(key, request.Hash, category.Value);
         return Ok(ToModel(key, await findings.ForMediaAsync(key)));
     }

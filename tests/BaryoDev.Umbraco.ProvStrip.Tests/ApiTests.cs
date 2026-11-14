@@ -150,6 +150,15 @@ public class ApiTests(UmbracoSiteFixture site)
         after.Labels.ShouldNotContain(l => l.StartsWith("AI attribution found"));
     }
 
+    [Fact] public async Task SkipWithAnotherItemsHashGets409()
+    {
+        var mine = await site.UploadAsync("camera.jpg");
+        var other = await site.UploadAsync("c2pa.jpg");
+        var otherHash = (await site.Resolve<IFindingStore>().ForMediaAsync(other.Key))[0].ContentHash;
+        Body<ProblemDetails>(await Api().Skip(mine.Key, new SkipRequestModel { Category = "Provenance", Hash = otherHash }), 409);
+        Body<MediaFindingsModel>(await Api().GetMedia(other.Key), 200).Labels.ShouldContain(l => l.StartsWith("AI attribution found"));
+    }
+
     [Fact] public async Task SecondScanGets409()
     {
         var scans = site.Resolve<IScanStore>();
