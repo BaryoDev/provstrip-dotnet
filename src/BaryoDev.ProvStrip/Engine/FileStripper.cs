@@ -14,6 +14,9 @@ public static class FileStripper
     /// </summary>
     public static FileOutcome Run(string inputPath, StripPolicy policy, string? outputPath = null, RuleSet? rules = null)
     {
+        var before = new FileInfo(inputPath);
+        var length = before.Length;
+        var modified = before.LastWriteTimeUtc;
         var input = File.ReadAllBytes(inputPath);
         var inspection = ProvStripEngine.Inspect(input, rules);
         var decision = policy.Decide(inspection);
@@ -28,13 +31,21 @@ public static class FileStripper
         if (result is not { Changed: true })
             return new FileOutcome(inputPath, inspection.Format, decision, result, Written: false);
 
-        WriteAtomically(inputPath, result.Output, inputPath);
+        // The file may have been edited since it was read. Stripping the old bytes over it would lose that edit.
+        WriteAtomically(inputPath, result.Output, inputPath, () =>
+        {
+            var now = new FileInfo(Path.GetFullPath(inputPath));
+            if (now.Length != length || now.LastWriteTimeUtc != modified)
+                throw new IOException($"{inputPath} changed while it was being stripped, so nothing was written. Run it again.");
+        });
         return new FileOutcome(inputPath, inspection.Format, decision, result, Written: true);
     }
 
-    static void WriteAtomically(string target, byte[] bytes, string modeFrom)
+    static void WriteAtomically(string target, byte[] bytes, string modeFrom, Action? beforeMove = null)
     {
         var full = Path.GetFullPath(target);
+        // Writing through a link: the target is replaced, not the link.
+        if (beforeMove is not null && File.ResolveLinkTarget(full, returnFinalTarget: true) is { } linked) full = linked.FullName;
         var temp = Path.Combine(Path.GetDirectoryName(full)!, $".{Path.GetFileName(full)}.provstrip.tmp");
         var created = false;
         try
@@ -50,6 +61,7 @@ public static class FileStripper
                 stream.Write(bytes);
             }
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, File.GetUnixFileMode(modeFrom));
+            beforeMove?.Invoke();
             File.Move(temp, full, overwrite: true);
         }
         catch

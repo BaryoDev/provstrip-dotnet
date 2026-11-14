@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace BaryoDev.ProvStrip.Formats;
 
 public static class FormatDetector
@@ -15,44 +13,50 @@ public static class FormatDetector
         return LooksLikeSvg(bytes) ? "svg" : null;
     }
 
-    /// <summary>Skips a BOM, whitespace, an XML declaration, comments and a doctype, then needs &lt;svg.</summary>
+    /// <summary>
+    /// Skips a BOM, whitespace, an XML declaration, comments and a doctype, then needs &lt;svg. It reads as far
+    /// as it must, so a long leading comment does not hide the file.
+    /// </summary>
     internal static bool LooksLikeSvg(ReadOnlySpan<byte> bytes)
     {
-        var head = bytes[..Math.Min(bytes.Length, 4096)];
-        if (head.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF])) head = head[3..];
-        var text = Encoding.UTF8.GetString(head);
-        var i = 0;
+        var i = bytes.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]) ? 3 : 0;
         while (true)
         {
-            while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
-            if (Skip(text, ref i, "<?", "?>") || Skip(text, ref i, "<!--", "-->") || SkipDoctype(text, ref i))
+            while (i < bytes.Length && bytes[i] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n') i++;
+            if (Skip(bytes, ref i, "<?"u8, "?>"u8) || Skip(bytes, ref i, "<!--"u8, "-->"u8) || SkipDoctype(bytes, ref i))
                 continue;
             break;
         }
-        return text.AsSpan(i).StartsWith("<svg") && i + 4 <= text.Length
-            && (i + 4 == text.Length || !char.IsLetterOrDigit(text[i + 4]));
+        var rest = bytes[i..];
+        return rest.StartsWith("<svg"u8) && (rest.Length == 4 || !char.IsAsciiLetterOrDigit((char)rest[4]));
     }
 
     // A doctype's internal subset is in brackets and holds '>' of its own.
-    static bool SkipDoctype(string text, ref int i)
+    static bool SkipDoctype(ReadOnlySpan<byte> bytes, ref int i)
     {
-        if (!text.AsSpan(i).StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)) return false;
-        var gt = text.IndexOf('>', i);
-        var open = text.IndexOf('[', i);
+        var rest = bytes[i..];
+        if (!rest.StartsWith("<!DOCTYPE"u8) && !rest.StartsWith("<!doctype"u8)) return false;
+        var gt = rest.IndexOf((byte)'>');
+        var open = rest.IndexOf((byte)'[');
         if (open >= 0 && (gt < 0 || open < gt))
         {
-            var close = text.IndexOf("]", open, StringComparison.Ordinal);
-            gt = close < 0 ? -1 : text.IndexOf('>', close);
+            var close = rest[open..].IndexOf((byte)']');
+            gt = -1;
+            if (close >= 0)
+            {
+                var after = rest[(open + close)..].IndexOf((byte)'>');
+                if (after >= 0) gt = open + close + after;
+            }
         }
-        i = gt < 0 ? text.Length : gt + 1;
+        i = gt < 0 ? bytes.Length : i + gt + 1;
         return true;
     }
 
-    static bool Skip(string text, ref int i, string open, string close)
+    static bool Skip(ReadOnlySpan<byte> bytes, ref int i, ReadOnlySpan<byte> open, ReadOnlySpan<byte> close)
     {
-        if (!text.AsSpan(i).StartsWith(open, StringComparison.OrdinalIgnoreCase)) return false;
-        var end = text.IndexOf(close, i + open.Length, StringComparison.Ordinal);
-        i = end < 0 ? text.Length : end + close.Length;
+        if (!bytes[i..].StartsWith(open)) return false;
+        var end = bytes[(i + open.Length)..].IndexOf(close);
+        i = end < 0 ? bytes.Length : i + open.Length + end + close.Length;
         return true;
     }
 }

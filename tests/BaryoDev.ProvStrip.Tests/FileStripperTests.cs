@@ -20,6 +20,20 @@ public class FileStripperTests
         ProvStripEngine.Inspect(File.ReadAllBytes(p)).IsClean.ShouldBeTrue();
     }
 
+    [Fact] public void InPlaceOnALinkStripsTheTargetAndKeepsTheLink()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var target = Temp.Copy("c2pa.png");
+        var link = Path.Combine(Path.GetDirectoryName(target)!, "link.png");
+        File.CreateSymbolicLink(link, target);
+
+        FileStripper.Run(link, AutoProvenance).Written.ShouldBeTrue();
+
+        new FileInfo(link).LinkTarget.ShouldBe(target);
+        ProvStripEngine.Inspect(File.ReadAllBytes(target)).IsClean.ShouldBeTrue();
+        Directory.GetFiles(Path.GetDirectoryName(target)!, "*.provstrip.tmp").ShouldBeEmpty();
+    }
+
     [Fact] public void BlockedWritesNothing()
     {
         var p = Temp.Copy("unknown-ancillary.png");

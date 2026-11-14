@@ -36,13 +36,21 @@ public class PackStepTests
 
     static PackRun Pack(string icon, params string[] properties) => Pack(icon, skipIcon: false, properties);
 
-    static PackRun Pack(string icon, bool skipIcon, params string[] properties)
+    static PackRun Pack(string icon, bool skipIcon, params string[] properties) => Pack(icon, skipIcon, null, properties);
+
+    // extra is one more file packed at the package root, next to the icon.
+    static PackRun Pack(string icon, bool skipIcon, (string Name, byte[] Content)? extra, params string[] properties)
     {
         var dir = Path.Combine(Path.GetTempPath(), "provstrip-pack", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var sample = Path.Combine(RepoRoot(), "tests", "BaryoDev.ProvStrip.Build.Tests", "sample");
         var csproj = File.ReadAllText(Path.Combine(sample, "Sample.csproj"));
         if (skipIcon) csproj = csproj.Replace("""Pack="true" PackagePath="/" """, """Pack="true" PackagePath="/" ProvStripSkip="true" """);
+        if (extra is { } e)
+        {
+            csproj = csproj.Replace("</ItemGroup>", $"""<None Include="{e.Name}" Pack="true" PackagePath="/" /></ItemGroup>""");
+            File.WriteAllBytes(Path.Combine(dir, e.Name), e.Content);
+        }
         File.WriteAllText(Path.Combine(dir, "Sample.csproj"), csproj);
         File.Copy(Path.Combine(sample, "nuget.config"), Path.Combine(dir, "nuget.config"));
         File.Copy(Fixtures.PathOf(icon), Path.Combine(dir, "icon.png"));
@@ -74,6 +82,18 @@ public class PackStepTests
         r.ExitCode.ShouldBe(0, r.Output);
         ProvStripEngine.Inspect(r.PackedFile("icon.png")).IsClean.ShouldBeTrue();
         File.ReadAllBytes(r.SourceFile("icon.png")).ShouldBe(Fixtures.Read("c2pa.png"));
+    }
+
+    // The detector once read only the first 4 KB, so a long leading comment made the file look like no image at all.
+    [Fact] public void SvgWithALongCommentIsStillChecked() =>
+        Pack("clean.png", false, ("long.svg", System.Text.Encoding.UTF8.GetBytes($"<!--{new string('x', 5000)}-->" + File.ReadAllText(Fixtures.PathOf("c2pa.svg")))))
+            .ShouldSatisfyAllConditions(r => r.ExitCode.ShouldNotBe(0), r => r.Output.ShouldContain("PROVSTRIP001"), r => r.Output.ShouldContain("long.svg"));
+
+    [Fact] public void ImageThatCannotBeReadFailsThePack()
+    {
+        var utf16 = System.Text.Encoding.Unicode.GetPreamble().Concat(System.Text.Encoding.Unicode.GetBytes(File.ReadAllText(Fixtures.PathOf("c2pa.svg")))).ToArray();
+        Pack("clean.png", false, ("utf16.svg", utf16)).ShouldSatisfyAllConditions(
+            r => r.ExitCode.ShouldNotBe(0), r => r.Output.ShouldContain("PROVSTRIP007"), r => r.Output.ShouldContain("utf16.svg"));
     }
 
     [Fact] public void CameraDataFailsByDefault() => Pack("camera.png").Output.ShouldContain("PROVSTRIP002");

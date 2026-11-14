@@ -86,6 +86,9 @@ options: --provenance auto|flag   (default auto for strip)
          --version, --help
 ```
 
+`strip -i` on a symbolic link writes through to the file it points at and leaves the link in place. It stops
+with an error, and writes nothing, if the file changes while it is being stripped.
+
 A directory means every supported file below it. More than one input needs `-i`, and an output path needs
 one input file.
 
@@ -130,6 +133,10 @@ instead and name the source file to strip with `provstrip strip -i`:
 
 - `PROVSTRIP005`: a static web asset in a Razor class library. The package records its length and hash.
 - `PROVSTRIP006`: an item with no `PackagePath`. NuGet places it by where it sits in the project.
+
+A file with an image name (`.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`, `.svgz`) that the tool cannot read, such as
+a UTF-16 SVG, fails the pack with `PROVSTRIP007` rather than going through unchecked. Set `ProvStripSkip="true"`
+on the item to let it through.
 
 ## Rules
 

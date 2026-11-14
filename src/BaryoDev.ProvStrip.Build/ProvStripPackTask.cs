@@ -47,7 +47,7 @@ public sealed class ProvStripPackTask : Microsoft.Build.Utilities.Task
         {
             var item = Files[index];
             var path = item.GetMetadata("FullPath");
-            if (!File.Exists(path) || !IsImage(path)) continue;
+            if (!File.Exists(path)) continue;
 
             var name = item.ItemSpec;
             var packagePath = item.GetMetadata("PackagePath");
@@ -61,6 +61,16 @@ public sealed class ProvStripPackTask : Microsoft.Build.Utilities.Task
             }
 
             var bytes = File.ReadAllBytes(path);
+            if (FormatDetector.Detect(bytes) is null)
+            {
+                // A file named like an image that is not one this tool can read could still carry attribution.
+                if (ImageExtensions.Contains(Path.GetExtension(path)))
+                    Log.LogError(null, "PROVSTRIP007", null, path, 0, 0, 0, 0,
+                        $"{name}: has an image file name but is not a PNG, JPEG, WebP or UTF-8 SVG file, so it cannot be checked. " +
+                        "Convert it, or set ProvStripSkip=\"true\" on the item.");
+                continue;
+            }
+
             Inspection inspection;
             try
             {
@@ -149,12 +159,6 @@ public sealed class ProvStripPackTask : Microsoft.Build.Utilities.Task
 
     static string Describe(IEnumerable<Finding> findings) => string.Join(", ", findings.Select(f => f.Description).Distinct());
 
-    // Only the first 4 KB of a file is read to decide whether it is an image at all.
-    static bool IsImage(string path)
-    {
-        using var stream = File.OpenRead(path);
-        var head = new byte[4096];
-        var read = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
-        return FormatDetector.Detect(head.AsSpan(0, read)) is not null;
-    }
+    static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".png", ".jpg", ".jpeg", ".webp", ".svg", ".svgz" };
 }
