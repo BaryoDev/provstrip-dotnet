@@ -1,11 +1,17 @@
+using System.Text.Json;
 using BaryoDev.ProvStrip.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.IO;
 using Umbraco.Cms.Core.Media;
+using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.ContentEditing;
+using Umbraco.Cms.Core.Models.TemporaryFile;
+using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Strings;
@@ -43,6 +49,49 @@ public class UmbracoSiteFixture : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("Umbraco:CMS:Global:UmbracoMediaPhysicalRootPath", Path.Combine(dataDirectory, "media"));
         foreach (var (key, value) in Settings) builder.UseSetting(key, value);
         builder.UseEnvironment("Development");
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddSingleton<MediaSavingProbe>();
+            services.AddSingleton<INotificationAsyncHandler<MediaSavingNotification>>(sp => sp.GetRequiredService<MediaSavingProbe>());
+        });
+    }
+
+    /// <summary>
+    /// Uploads the file the way the backoffice does, through the services the Management API controllers call: a
+    /// temporary file, then a media item whose umbracoFile points at it. Umbraco's property value editor moves the
+    /// temporary file into media storage during the create.
+    /// </summary>
+    public async Task<IMedia> UploadAsBackofficeAsync(string fixtureName)
+    {
+        var temporaryFileKey = Guid.NewGuid();
+        var bytes = Fixtures.Read(fixtureName);
+        var temp = await Step("temporary file", () => Resolve<ITemporaryFileService>().CreateAsync(new CreateTemporaryFileModel
+        {
+            Key = temporaryFileKey,
+            FileName = fixtureName,
+            OpenReadStream = () => new MemoryStream(bytes, writable: false),
+        }));
+        if (!temp.Success) throw new InvalidOperationException($"Temporary file failed: {temp.Status}");
+
+        var key = Guid.NewGuid();
+        var created = await Step("create media", () => Resolve<IMediaEditingService>().CreateAsync(new MediaCreateModel
+        {
+            Key = key,
+            ContentTypeKey = Resolve<IMediaTypeService>().Get(Constants.Conventions.MediaTypes.Image)!.Key,
+            // The same shape the Management API hands over: the request's JSON value, as a JsonNode.
+            Properties = [new PropertyValueModel { Alias = Constants.Conventions.Media.File, Value = JsonSerializer.SerializeToNode(new { temporaryFileId = temporaryFileKey }) }],
+            Variants = [new VariantModel { Name = Path.GetFileNameWithoutExtension(fixtureName) }],
+        }, Constants.Security.SuperUserKey));
+        if (!created.Success) throw new InvalidOperationException($"Media create failed: {created.Status}");
+        return Resolve<IMediaService>().GetById(key)!;
+    }
+
+    /// <summary>Fails with the step's name instead of hanging the run.</summary>
+    static async Task<T> Step<T>(string name, Func<Task<T>> start)
+    {
+        // On the thread pool, so a step that blocks before it returns a task still times out.
+        try { return await Task.Run(start).WaitAsync(TimeSpan.FromSeconds(60)); }
+        catch (TimeoutException) { throw new TimeoutException($"Upload hung at: {name}"); }
     }
 
     public HttpClient AnonymousClient() => CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -113,6 +162,32 @@ public class UmbracoSiteFixture : WebApplicationFactory<Program>, IAsyncLifetime
         await base.DisposeAsync();
         try { Directory.Delete(dataDirectory, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
+}
+
+/// <summary>Records, at MediaSaving, whether each saved item's stored file is already readable.</summary>
+public sealed class MediaSavingProbe(MediaFileManager files, MediaUrlGeneratorCollection urlGenerators) : INotificationAsyncHandler<MediaSavingNotification>
+{
+    public System.Collections.Concurrent.ConcurrentDictionary<Guid, bool> FileReadable { get; } = new();
+
+    public Task HandleAsync(MediaSavingNotification notification, CancellationToken cancellationToken)
+    {
+        foreach (var media in notification.SavedEntities)
+            if (media.TryGetMediaPath(Constants.Conventions.Media.File, urlGenerators, out var path) && !string.IsNullOrEmpty(path))
+                FileReadable[media.Key] = files.FileSystem.FileExists(files.FileSystem.GetRelativePath(path));
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>A second site with camera data set to Auto. Runs on its own, after the shared site's collection.</summary>
+public sealed class AutoCameraSiteFixture : UmbracoSiteFixture
+{
+    protected override IReadOnlyDictionary<string, string> Settings => new Dictionary<string, string> { ["BaryoDev:ProvStrip:Camera"] = "Auto" };
+}
+
+[CollectionDefinition(Name, DisableParallelization = true)]
+public class AutoCameraCollection : ICollectionFixture<AutoCameraSiteFixture>
+{
+    public const string Name = "umbraco-auto-camera";
 }
 
 [CollectionDefinition(Name)]

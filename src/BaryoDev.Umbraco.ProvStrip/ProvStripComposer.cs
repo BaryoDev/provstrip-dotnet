@@ -3,12 +3,18 @@ using BaryoDev.Umbraco.ProvStrip.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
+using Umbraco.Cms.Core.Notifications;
+using Umbraco.Extensions;
 
 namespace BaryoDev.Umbraco.ProvStrip;
 
 public sealed class ProvStripComposer : IComposer
 {
-    public void Compose(IUmbracoBuilder builder) => AddServices(builder.Services);
+    public void Compose(IUmbracoBuilder builder)
+    {
+        AddServices(builder.Services);
+        builder.AddNotificationAsyncHandler<MediaSavingNotification, MediaSavingHandler>();
+    }
 
     internal static IServiceCollection AddServices(IServiceCollection services)
     {
@@ -16,7 +22,8 @@ public sealed class ProvStripComposer : IComposer
         // Stateless over the scope provider, so one instance serves every request and the background job.
         services.AddSingleton<IFindingStore, FindingStore>();
         services.AddSingleton<IScanStore, ScanStore>();
-        services.AddSingleton<IMediaProvStrip, MediaProvStrip>();
+        services.AddSingleton<MediaProvStrip>();
+        services.AddSingleton<IMediaProvStrip>(sp => sp.GetRequiredService<MediaProvStrip>());
         return services;
     }
 }

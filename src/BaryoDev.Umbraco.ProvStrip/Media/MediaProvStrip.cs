@@ -35,11 +35,21 @@ internal sealed class MediaProvStrip(
 {
     const int SniffBytes = 4096;
 
-    public async Task<MediaCheck> CheckAsync(IMedia media, CancellationToken ct)
+    public Task<MediaCheck> CheckAsync(IMedia media, CancellationToken ct) => CheckCoreAsync(media, autoStrip: false);
+
+    /// <summary>
+    /// The upload check: like <see cref="CheckAsync"/>, but strips the categories set to Auto from the stored file and
+    /// sets the size on <paramref name="media"/>, which the caller is saving. Never saves.
+    /// </summary>
+    internal Task<MediaCheck> CheckUploadAsync(IMedia media, CancellationToken ct) => CheckCoreAsync(media, autoStrip: true);
+
+    async Task<MediaCheck> CheckCoreAsync(IMedia media, bool autoStrip)
     {
         var read = Read(media);
         if (read.Skip) return new MediaCheck(media.Key, read.Path, null, [], null);
         if (read.Problem is { } problem) return await NeedsLook(media.Key, read.Path, read.Hash ?? "", problem);
+
+        if (autoStrip && await AutoRemovalsAsync(read) is { Count: > 0 } remove) return await StripAsync(media, read, remove);
 
         var records = Analyze(media.Key, read.Hash!, read.Bytes!, out var unknown);
         if (unknown is not null) return await NeedsLook(media.Key, read.Path, read.Hash!, unknown, records);
@@ -62,18 +72,55 @@ internal sealed class MediaProvStrip(
         var decision = policy.Decide(ProvStripEngine.Inspect(read.Bytes));
         if (decision.Remove.Count == 0) return await CheckAsync(media, ct);
 
-        var result = ProvStripEngine.Strip(read.Bytes, decision.Remove);
+        var check = await StripAsync(media, read, decision.Remove);
+        using (ReentryGuard.Enter()) mediaService.Save(media);
+        return check;
+    }
+
+    /// <summary>The findings the options say to strip on upload, less any category a person skipped for this file.</summary>
+    async Task<List<Finding>> AutoRemovalsAsync(FileRead read)
+    {
+        var o = options.Value;
+        if (o.Provenance != CategoryMode.Auto && o.Camera != CategoryMode.Auto) return [];
+        Decision decision;
+        try
+        {
+            decision = new StripPolicy(o.Provenance, o.Camera, o.KeepUnknown).Decide(ProvStripEngine.Inspect(read.Bytes!));
+        }
+        catch (ProvStripException)
+        {
+            return [];
+        }
+        // An unknown segment the options do not keep means a person looks first; nothing is stripped.
+        if (decision.Blocked) return [];
+        var remove = new List<Finding>(decision.Remove.Count);
+        foreach (var f in decision.Remove)
+            if (!await store.IsSkippedAsync(read.Hash!, f.Category)) remove.Add(f);
+        return remove;
+    }
+
+    /// <summary>Overwrites the stored file without <paramref name="remove"/>, sets the size on the entity, and records the result.</summary>
+    async Task<MediaCheck> StripAsync(IMedia media, FileRead read, IReadOnlyList<Finding> remove)
+    {
+        StripResult result;
+        try
+        {
+            result = ProvStripEngine.Strip(read.Bytes!, remove);
+        }
+        catch (ProvStripException e)
+        {
+            return await NeedsLook(media.Key, read.Path, read.Hash!, $"could not be cleaned: {e.Message}",
+                Analyze(media.Key, read.Hash!, read.Bytes!, out _));
+        }
         using (var output = new MemoryStream(result.Output, writable: false))
             files.FileSystem.AddFile(read.Relative!, output, overrideIfExists: true);
-
         media.SetValue(Constants.Conventions.Media.Bytes, result.Output.Length);
-        using (ReentryGuard.Enter()) mediaService.Save(media);
 
         var hash = Hash(result.Output);
-        var records = Analyze(mediaKey, hash, result.Output, out var unknown).Concat(
-            result.Removed.Select(f => new FindingRecord(mediaKey, hash, f.Category, f.RuleId, f.Description, FindingStatus.Removed))).ToList();
-        await store.ReplaceAsync(mediaKey, hash, records);
-        return new MediaCheck(mediaKey, read.Path, hash, await store.ForMediaAsync(mediaKey), unknown);
+        var records = Analyze(media.Key, hash, result.Output, out var unknown).Concat(
+            result.Removed.Select(f => new FindingRecord(media.Key, hash, f.Category, f.RuleId, f.Description, FindingStatus.Removed))).ToList();
+        await store.ReplaceAsync(media.Key, hash, records);
+        return new MediaCheck(media.Key, read.Path, hash, await store.ForMediaAsync(media.Key), unknown);
     }
 
     sealed record FileRead(string? Path, string? Relative, byte[]? Bytes, string? Hash, string? Problem, bool Skip);
