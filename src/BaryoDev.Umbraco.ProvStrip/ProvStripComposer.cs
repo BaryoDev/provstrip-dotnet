@@ -36,6 +36,7 @@ public sealed class ProvStripComposer : IComposer
         services.AddSingleton<Api.RemoveAllQueue>();
         services.AddSingleton<Api.RemoveAllWorker>();
         services.AddHostedService(sp => sp.GetRequiredService<Api.RemoveAllWorker>());
+        services.AddRecurringBackgroundJob<Scan.ProvStripScanJob>();
         return services;
     }
 }

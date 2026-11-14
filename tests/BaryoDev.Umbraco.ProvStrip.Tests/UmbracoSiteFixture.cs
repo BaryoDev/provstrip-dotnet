@@ -52,6 +52,10 @@ public class UmbracoSiteFixture : WebApplicationFactory<Program>, IAsyncLifetime
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<MediaSavingProbe>();
+            // Tests run the scan job by hand; the scheduled copy would move the same scan alongside them.
+            foreach (var job in services.Where(d => d.ServiceType == typeof(global::Umbraco.Cms.Infrastructure.BackgroundJobs.IRecurringBackgroundJob)
+                         && d.ImplementationType == typeof(Scan.ProvStripScanJob)).ToList())
+                services.Remove(job);
             services.AddSingleton<INotificationAsyncHandler<MediaSavingNotification>>(sp => sp.GetRequiredService<MediaSavingProbe>());
         });
     }

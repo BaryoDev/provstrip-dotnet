@@ -27,6 +27,14 @@ public class ComposerTests(UmbracoSiteFixture site)
         (o.Camera, o.Provenance, o.ScanBatchSize).ShouldBe((CategoryMode.Auto, CategoryMode.Flag, 7));
     }
 
+    [Fact] public void ScanJobIsScheduled()
+    {
+        var services = new ServiceCollection().AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        ProvStripComposer.AddServices(services);
+        services.ShouldContain(d => d.ServiceType == typeof(global::Umbraco.Cms.Infrastructure.BackgroundJobs.IRecurringBackgroundJob)
+            && d.ImplementationType == typeof(Scan.ProvStripScanJob));
+    }
+
     [Fact] public async Task SiteBootsWithThePackage()
     {
         using var response = await site.AnonymousClient().GetAsync("/");
