@@ -86,8 +86,8 @@ options: --provenance auto|flag   (default auto for strip)
          --version, --help
 ```
 
-`strip -i` on a symbolic link writes through to the file it points at and leaves the link in place. It stops
-with an error, and writes nothing, if the file changes while it is being stripped.
+`strip -i` refuses a symbolic link with an error and writes nothing. Name the file it points at, or give an
+output path. It also stops, writing nothing, if the file changes while it is being stripped.
 
 A directory means every supported file below it. More than one input needs `-i`, and an output path needs
 one input file.

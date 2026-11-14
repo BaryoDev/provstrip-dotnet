@@ -14,6 +14,10 @@ public static class FileStripper
     /// </summary>
     public static FileOutcome Run(string inputPath, StripPolicy policy, string? outputPath = null, RuleSet? rules = null)
     {
+        // A link is refused rather than followed: the atomic move would replace the link itself, and following it
+        // could write outside the folder the user pointed at.
+        if (outputPath is null && File.ResolveLinkTarget(Path.GetFullPath(inputPath), returnFinalTarget: false) is not null)
+            throw new IOException($"{inputPath} is a symbolic link. Strip the file it points at, or give an output path.");
         var before = new FileInfo(inputPath);
         var length = before.Length;
         var modified = before.LastWriteTimeUtc;
@@ -44,8 +48,6 @@ public static class FileStripper
     static void WriteAtomically(string target, byte[] bytes, string modeFrom, Action? beforeMove = null)
     {
         var full = Path.GetFullPath(target);
-        // Writing through a link: the target is replaced, not the link.
-        if (beforeMove is not null && File.ResolveLinkTarget(full, returnFinalTarget: true) is { } linked) full = linked.FullName;
         var temp = Path.Combine(Path.GetDirectoryName(full)!, $".{Path.GetFileName(full)}.provstrip.tmp");
         var created = false;
         try

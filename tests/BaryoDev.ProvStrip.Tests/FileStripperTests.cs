@@ -20,18 +20,44 @@ public class FileStripperTests
         ProvStripEngine.Inspect(File.ReadAllBytes(p)).IsClean.ShouldBeTrue();
     }
 
-    [Fact] public void InPlaceOnALinkStripsTheTargetAndKeepsTheLink()
+    [Fact] public void InPlaceOnALinkIsRefusedAndNothingChanges()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var target = Temp.Copy("c2pa.png");
+        var before = File.ReadAllBytes(target);
+        var link = Path.Combine(Path.GetDirectoryName(target)!, "link.png");
+        File.CreateSymbolicLink(link, target);
+
+        Should.Throw<IOException>(() => FileStripper.Run(link, AutoProvenance)).Message.ShouldContain("symbolic link");
+
+        new FileInfo(link).LinkTarget.ShouldBe(target);
+        File.ReadAllBytes(target).ShouldBe(before);
+    }
+
+    [Fact] public void InPlaceOnALinkOutsideTheFolderLeavesTheTargetAlone()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var outside = Temp.Copy("c2pa.png");
+        var before = File.ReadAllBytes(outside);
+        var root = Temp.Dir();
+        File.CreateSymbolicLink(Path.Combine(root, "icon.png"), outside);
+
+        Should.Throw<IOException>(() => FileStripper.Run(Path.Combine(root, "icon.png"), AutoProvenance));
+
+        File.ReadAllBytes(outside).ShouldBe(before);
+    }
+
+    [Fact] public void OutputPathMayReadThroughALink()
     {
         if (OperatingSystem.IsWindows()) return;
         var target = Temp.Copy("c2pa.png");
         var link = Path.Combine(Path.GetDirectoryName(target)!, "link.png");
         File.CreateSymbolicLink(link, target);
+        var output = Path.Combine(Path.GetDirectoryName(target)!, "out.png");
 
-        FileStripper.Run(link, AutoProvenance).Written.ShouldBeTrue();
+        FileStripper.Run(link, AutoProvenance, output).Written.ShouldBeTrue();
 
-        new FileInfo(link).LinkTarget.ShouldBe(target);
-        ProvStripEngine.Inspect(File.ReadAllBytes(target)).IsClean.ShouldBeTrue();
-        Directory.GetFiles(Path.GetDirectoryName(target)!, "*.provstrip.tmp").ShouldBeEmpty();
+        ProvStripEngine.Inspect(File.ReadAllBytes(output)).IsClean.ShouldBeTrue();
     }
 
     [Fact] public void BlockedWritesNothing()
