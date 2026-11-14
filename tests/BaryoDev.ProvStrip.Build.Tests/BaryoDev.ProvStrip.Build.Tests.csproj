@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+    <ProjectReference Include="..\..\src\BaryoDev.ProvStrip\BaryoDev.ProvStrip.csproj" />
+    <!-- Built first, not referenced: the tests run its DLL inside dotnet pack. -->
+    <ProjectReference Include="..\..\src\BaryoDev.ProvStrip.Build\BaryoDev.ProvStrip.Build.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="sample/**" />
+    <None Remove="sample/**" />
+    <Compile Include="../BaryoDev.ProvStrip.Tests/Fixtures.cs" Link="Shared/Fixtures.cs" />
+    <None Include="../fixtures/**" CopyToOutputDirectory="PreserveNewest" LinkBase="fixtures" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+</Project>

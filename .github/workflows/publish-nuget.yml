@@ -1,0 +1,326 @@
+name: Publish to NuGet
+
+# Version comes from <Version> in Directory.Build.props, never from a hand-typed input, so the
+# published version is always recorded in git and the tag has to agree with it. All three packages
+# ship at that one version.
+#
+# A merge to main is the release switch: when <Version> is new on nuget.org the run publishes and
+# tags the commit, and when it is not the run stops after the check job. A hand-pushed tag still
+# publishes, which is how a partial release gets finished, but only when the tagged commit is on main.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, test and pack without publishing"
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      # A tag can be pushed on any commit, including one that never went through a pull request.
+      - name: A tag must point at a commit on main
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF is not on main. Merge the commit through a pull request first." && exit 1
+          }
+
+      - name: Decide whether this run has anything to publish
+        id: decide
+        run: |
+          # Tags and manual runs always go on. Only a merge to main can be a no-op.
+          if [ "$GITHUB_EVENT_NAME" != "push" ] || [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          test -n "$VERSION" || { echo "::error::No <Version> found in Directory.Build.props"; exit 1; }
+          NORM=$(printf '%s' "$VERSION" | tr '[:upper:]' '[:lower:]' | cut -d'+' -f1)
+          case "$NORM" in *.*.*.0) NORM=${NORM%.0} ;; esac
+
+          # Fails closed: only a 404 or a parsed list counts as an answer. Any one package missing
+          # the version is enough, so a half-finished release gets finished.
+          PUBLISH=false
+          for ID in baryodev.provstrip baryodev.provstrip.tool baryodev.provstrip.build; do
+            URL="https://api.nuget.org/v3-flatcontainer/$ID/index.json"
+            STATUS=$(curl -sS --max-time 30 -o /tmp/versions.json -w '%{http_code}' "$URL") || {
+              echo "::error::Could not reach nuget.org to check $ID." && exit 1
+            }
+            case "$STATUS" in
+              404) PUBLISH=true ;;
+              200)
+                RC=0
+                jq -e --arg v "$NORM" '.versions | map(ascii_downcase | split("+")[0]) | index($v)' \
+                  /tmp/versions.json > /dev/null || RC=$?
+                case "$RC" in
+                  0) ;;
+                  1) PUBLISH=true ;;
+                  *) echo "::error::Could not read the version list for $ID (jq exit $RC)." && exit 1 ;;
+                esac
+                ;;
+              *) echo "::error::nuget.org answered $STATUS when asked about $ID." && exit 1 ;;
+            esac
+          done
+
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "$VERSION needs publishing: $PUBLISH"
+
+  publish:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
+      # Lets the runner mint the OIDC token nuget.org exchanges for a short-lived API key. No
+      # long-lived secret is stored in this repository.
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read version from source
+        id: version
+        run: |
+          VERSION=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          test -n "$VERSION" || { echo "::error::No <Version> found in Directory.Build.props"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version from Directory.Build.props: $VERSION"
+
+      - name: Confirm tag matches the version in source
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Tag $TAG does not match <Version> $VERSION" && exit 1
+          fi
+
+      - name: Refuse to republish a version that already exists
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # nuget.org accepts a version once, forever. --skip-duplicate below turns a repeat into a
+          # silent success, which is the wrong answer when the intent was to ship something new.
+          # The run stops only when all three packages already have this version, so a rerun after
+          # a partial push still reaches the push step and finishes the release.
+          #
+          # Fails closed: only a 404 counts as not published, a 200 is parsed and compared, and
+          # anything else stops the run. Versions are compared the way NuGet normalizes them.
+          NORM=$(printf '%s' "$VERSION" | tr '[:upper:]' '[:lower:]' | cut -d'+' -f1)
+          case "$NORM" in *.*.*.0) NORM=${NORM%.0} ;; esac
+
+          PUBLISHED=0
+          for ID in baryodev.provstrip baryodev.provstrip.tool baryodev.provstrip.build; do
+            URL="https://api.nuget.org/v3-flatcontainer/$ID/index.json"
+            STATUS=$(curl -sS --max-time 30 -o /tmp/versions.json -w '%{http_code}' "$URL") || {
+              echo "::error::Could not reach nuget.org to check $ID for an existing $VERSION." && exit 1
+            }
+            case "$STATUS" in
+              404)
+                echo "$ID has never been published, so $VERSION is free."
+                ;;
+              200)
+                RC=0
+                jq -e --arg v "$NORM" \
+                  'if (.versions? | type) != "array" then
+                     error("versions must be an array")
+                   else
+                     .versions | map(ascii_downcase | split("+")[0]) | index($v)
+                   end' \
+                  /tmp/versions.json > /dev/null || RC=$?
+                case "$RC" in
+                  0)
+                    echo "$ID already has $VERSION."
+                    PUBLISHED=$((PUBLISHED + 1))
+                    ;;
+                  1)
+                    echo "$ID does not have $VERSION ($NORM) yet."
+                    ;;
+                  *)
+                    echo "::error::Could not read the version list for $ID (jq exit $RC)." && exit 1
+                    ;;
+                esac
+                ;;
+              *)
+                echo "::error::nuget.org answered $STATUS when asked about $ID." && exit 1
+                ;;
+            esac
+          done
+
+          if [ "$PUBLISHED" -eq 3 ]; then
+            echo "::error::$VERSION is already on nuget.org. Bump <Version> in Directory.Build.props." && exit 1
+          fi
+
+      # A package must never ship without its tests having run.
+      - name: Test
+        run: dotnet test provstrip-dotnet.slnx --configuration Release
+
+      # Packing the solution also runs this repository's own pack step over its icon, so a package
+      # carrying attribution in its own icon cannot be published from here.
+      - name: Pack
+        run: dotnet pack provstrip-dotnet.slnx --configuration Release --output ./nupkgs
+
+      - name: Listing metadata is real
+        run: |
+          for P in ./nupkgs/*.nupkg; do
+            unzip -p "$P" '*.nuspec' > /tmp/spec.xml
+            if grep -q '<description>Package Description</description>' /tmp/spec.xml; then
+              echo "::error::$P: description is still NuGet's placeholder"; exit 1
+            fi
+          done
+
+      - name: List artifacts
+        run: ls -la ./nupkgs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nupkgs
+          path: ./nupkgs/*.nupkg
+
+      # ---------------------------------------------------------------------------------------
+      # The tests prove the source. These prove the packages, the way a consumer meets them: the
+      # tool installs and runs, and the pack step fails a consumer's pack on a C2PA icon. Both are
+      # package-only behaviour that no ProjectReference exercises.
+      # ---------------------------------------------------------------------------------------
+
+      - name: Install the tool from the packed file and run it
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          WORK=$(mktemp -d)
+          dotnet tool install BaryoDev.ProvStrip.Tool --version "$VERSION" --tool-path "$WORK/tool" --add-source ./nupkgs
+          test "$("$WORK/tool/provstrip" --version)" = "$VERSION" || { echo "::error::provstrip --version is not $VERSION"; exit 1; }
+          cp tests/fixtures/c2pa.png "$WORK/icon.png"
+          "$WORK/tool/provstrip" strip -i "$WORK/icon.png"
+          "$WORK/tool/provstrip" verify "$WORK/icon.png"
+
+      - name: Pack a consumer that references the pack step
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          FEED="$PWD/nupkgs"
+          WORK=$(mktemp -d)
+          cd "$WORK"
+          dotnet new classlib -o consumer --framework net10.0 > /dev/null
+          cd consumer
+          # A local feed first. Restoring the pack step from nuget.org here would prove nothing about
+          # the bytes this run just built, so the version is pinned to this run's.
+          cat > nuget.config <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$FEED" />
+              <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          dotnet add package BaryoDev.ProvStrip.Build --version "$VERSION" --source "$FEED"
+          cp "$GITHUB_WORKSPACE/tests/fixtures/c2pa.png" icon.png
+          sed -i 's#</Project>#  <PropertyGroup><PackageIcon>icon.png</PackageIcon><Description>Consumer.</Description></PropertyGroup>\n  <ItemGroup><None Include="icon.png" Pack="true" PackagePath="/" /></ItemGroup>\n</Project>#' consumer.csproj
+
+          if dotnet pack -o out > pack.log 2>&1; then
+            cat pack.log
+            echo "::error::The pack step let a C2PA icon through." && exit 1
+          fi
+          grep -q "PROVSTRIP001" pack.log || { cat pack.log; echo "::error::The pack failed, but not with PROVSTRIP001."; exit 1; }
+
+          dotnet pack -o out -p:ProvStripProvenance=auto
+          unzip -o -q out/consumer.1.0.0.nupkg icon.png -d packed
+          cmp -s packed/icon.png icon.png && { echo "::error::The packed icon was not stripped."; exit 1; }
+          cmp -s icon.png "$GITHUB_WORKSPACE/tests/fixtures/c2pa.png" || { echo "::error::The source icon was changed."; exit 1; }
+
+          # A project with TargetFrameworks packs in the outer build, which imports buildMultiTargeting/.
+          sed -i 's#<TargetFramework>net10.0</TargetFramework>#<TargetFrameworks>net8.0;net10.0</TargetFrameworks>#' consumer.csproj
+          grep -q "<TargetFrameworks>" consumer.csproj || { echo "::error::The consumer was not switched to TargetFrameworks."; exit 1; }
+          if dotnet pack -o out-multi > pack-multi.log 2>&1; then
+            cat pack-multi.log
+            echo "::error::The pack step let a C2PA icon through a multi-target pack." && exit 1
+          fi
+          grep -q "PROVSTRIP001" pack-multi.log || { cat pack-multi.log; echo "::error::The multi-target pack failed, but not with PROVSTRIP001."; exit 1; }
+          echo "Pack step fails on C2PA, single and multi target, and strips only the packed copy."
+
+      # Requested here rather than earlier because the key expires after an hour and each OIDC
+      # token buys exactly one key. Runs on dry runs too, so a dry run actually verifies the
+      # trusted publishing policy. Obtaining a key publishes nothing.
+      - name: Exchange OIDC token for a short-lived NuGet key
+        id: nuget_login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER || 'arnelirobles' }}
+
+      - name: Confirm the key was issued
+        env:
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::No API key returned. Check the trusted publishing policy on nuget.org." && exit 1
+          fi
+          echo "Trusted publishing OK: short-lived key issued."
+
+      # Publication requires a push to main or a v* tag. A manual run cannot reach this step
+      # whatever its inputs say, because it can run on any branch and a branch has not been
+      # through a pull request.
+      - name: Publish
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
+        run: |
+          # Engine first, then the tool and the pack step, named rather than globbed.
+          for PKG in "BaryoDev.ProvStrip.$VERSION.nupkg" "BaryoDev.ProvStrip.Tool.$VERSION.nupkg" "BaryoDev.ProvStrip.Build.$VERSION.nupkg"; do
+            test -f "./nupkgs/$PKG" || { echo "::error::$PKG was not packed"; exit 1; }
+            dotnet nuget push "./nupkgs/$PKG" \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+  # Its own job so the token that can write to the repository never sits beside the build, the
+  # tests or the package install. A tag made with this token does not start another run.
+  tag:
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the published commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.publish.outputs.version }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
+            echo "$TAG already exists."
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA" > /dev/null
+          echo "Tagged $GITHUB_SHA as $TAG."

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>BaryoDev.ProvStrip.Build</PackageId>
+    <Title>ProvStrip pack step</Title>
+    <Description>Checks every image dotnet pack puts in a package, PackageIcon included, for AI attribution and camera data. Fails the pack by default, or strips the packed copy. Never edits source files.</Description>
+    <PackageTags>c2pa provenance exif metadata strip msbuild pack nuget</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_ProvStripTaskFiles</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <!-- The engine is compiled in rather than referenced, so the task is one DLL and every packable project in this
+       repository can be ordered after this one without a reference cycle. -->
+  <ItemGroup>
+    <Compile Include="../BaryoDev.ProvStrip/**/*.cs" Exclude="../BaryoDev.ProvStrip/obj/**;../BaryoDev.ProvStrip/bin/**" LinkBase="Engine" />
+    <EmbeddedResource Include="../BaryoDev.ProvStrip/Rules/rules.json" LogicalName="BaryoDev.ProvStrip.rules.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="build/**" Pack="true" PackagePath="build/" />
+    <None Include="buildMultiTargeting/**" Pack="true" PackagePath="buildMultiTargeting/" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../icon.png" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <Target Name="_ProvStripTaskFiles">
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(TargetPath)" PackagePath="tasks/$(TargetFramework)/" />
+    </ItemGroup>
+  </Target>
+</Project>

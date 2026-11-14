@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>provstrip</ToolCommandName>
+    <PackageId>BaryoDev.ProvStrip.Tool</PackageId>
+    <Title>ProvStrip command</Title>
+    <Description>The provstrip command: strip or verify AI attribution and camera data in PNG, JPEG, WebP and SVG files, by cutting bytes, never re-encoding.</Description>
+    <PackageTags>c2pa provenance exif metadata strip png jpeg webp svg dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../icon.png" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
+    <ProjectReference Include="..\BaryoDev.ProvStrip\BaryoDev.ProvStrip.csproj" />
+  </ItemGroup>
+</Project>

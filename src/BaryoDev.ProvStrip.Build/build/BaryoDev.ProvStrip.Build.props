@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <ProvStripEnabled Condition="'$(ProvStripEnabled)' == ''">true</ProvStripEnabled>
+    <ProvStripProvenance Condition="'$(ProvStripProvenance)' == ''">flag</ProvStripProvenance>
+    <ProvStripCamera Condition="'$(ProvStripCamera)' == ''">flag</ProvStripCamera>
+    <ProvStripKeepUnknown Condition="'$(ProvStripKeepUnknown)' == ''">false</ProvStripKeepUnknown>
+    <ProvStripTaskAssembly Condition="'$(ProvStripTaskAssembly)' == ''">$(MSBuildThisFileDirectory)../tasks/net10.0/BaryoDev.ProvStrip.Build.dll</ProvStripTaskAssembly>
+  </PropertyGroup>
+</Project>
