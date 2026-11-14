@@ -14,3 +14,7 @@ umbraco/mediacache/
 appsettings-schema*.json
 umbraco-package-schema.json
 tests/BaryoDev.Umbraco.ProvStrip.TestSite/wwwroot/media/
+
+# Client tests have no dependencies; pnpm still writes these.
+tests/client/node_modules/
+tests/client/pnpm-lock.yaml

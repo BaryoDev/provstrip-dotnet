@@ -1,0 +1,11 @@
+/* Shared by the info app and the dashboard; each links it inside its shadow root. */
+:host { display: block; }
+.row { display: flex; align-items: center; gap: var(--uui-size-space-3, 9px); flex-wrap: wrap; margin-block: var(--uui-size-space-2, 6px); }
+.row .label { flex: 1 1 12rem; }
+.muted { color: var(--uui-color-text-alt, #68676b); }
+.error { color: var(--uui-color-danger, #d42054); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: start; padding: var(--uui-size-space-2, 6px) var(--uui-size-space-3, 9px); vertical-align: top; border-block-end: 1px solid var(--uui-color-divider, #e9e9eb); }
+th.folder { background: var(--uui-color-surface-alt, #f3f3f5); font-weight: 600; }
+.actions { display: flex; gap: var(--uui-size-space-2, 6px); flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; gap: var(--uui-size-space-4, 12px); flex-wrap: wrap; margin-block-end: var(--uui-size-space-4, 12px); }
