@@ -115,6 +115,8 @@ export default class ProvStripDashboardElement extends UmbLitElement {
 
   #progress() {
     if (!this._scan || this._scan.state === "None") return html`<span class="muted">No scan yet.</span>`;
+    // The background job picks a request up within seconds, or a few minutes after the site starts.
+    if (this._scan.state === "Requested") return html`<span class="muted">Scan queued. It starts shortly.</span>`;
     return html`<span>Checked ${this._scan.checked} of ${this._scan.total}</span>`;
   }
 

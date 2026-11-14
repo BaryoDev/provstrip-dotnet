@@ -9,3 +9,6 @@ th, td { text-align: start; padding: var(--uui-size-space-2, 6px) var(--uui-size
 th.folder { background: var(--uui-color-surface-alt, #f3f3f5); font-weight: 600; }
 .actions { display: flex; gap: var(--uui-size-space-2, 6px); flex-wrap: wrap; }
 .toolbar { display: flex; align-items: center; gap: var(--uui-size-space-4, 12px); flex-wrap: wrap; margin-block-end: var(--uui-size-space-4, 12px); }
+/* In the results table: keep Delete and Skip next to their label, and line the first label up with the file name. */
+td .row .label { flex: 0 1 auto; }
+td > .row:first-child { margin-block-start: 0; }
