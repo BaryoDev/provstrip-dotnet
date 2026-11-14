@@ -1,7 +1,7 @@
 name: Publish to NuGet
 
 # Version comes from <Version> in Directory.Build.props, never from a hand-typed input, so the
-# published version is always recorded in git and the tag has to agree with it. All three packages
+# published version is always recorded in git and the tag has to agree with it. All four packages
 # ship at that one version.
 #
 # A merge to main is the release switch: when <Version> is new on nuget.org the run publishes and
@@ -62,7 +62,7 @@ jobs:
           # Fails closed: only a 404 or a parsed list counts as an answer. Any one package missing
           # the version is enough, so a half-finished release gets finished.
           PUBLISH=false
-          for ID in baryodev.provstrip baryodev.provstrip.tool baryodev.provstrip.build; do
+          for ID in baryodev.provstrip baryodev.provstrip.tool baryodev.provstrip.build baryodev.umbraco.provstrip; do
             URL="https://api.nuget.org/v3-flatcontainer/$ID/index.json"
             STATUS=$(curl -sS --max-time 30 -o /tmp/versions.json -w '%{http_code}' "$URL") || {
               echo "::error::Could not reach nuget.org to check $ID." && exit 1
@@ -129,7 +129,7 @@ jobs:
         run: |
           # nuget.org accepts a version once, forever. --skip-duplicate below turns a repeat into a
           # silent success, which is the wrong answer when the intent was to ship something new.
-          # The run stops only when all three packages already have this version, so a rerun after
+          # The run stops only when all four packages already have this version, so a rerun after
           # a partial push still reaches the push step and finishes the release.
           #
           # Fails closed: only a 404 counts as not published, a 200 is parsed and compared, and
@@ -138,7 +138,7 @@ jobs:
           case "$NORM" in *.*.*.0) NORM=${NORM%.0} ;; esac
 
           PUBLISHED=0
-          for ID in baryodev.provstrip baryodev.provstrip.tool baryodev.provstrip.build; do
+          for ID in baryodev.provstrip baryodev.provstrip.tool baryodev.provstrip.build baryodev.umbraco.provstrip; do
             URL="https://api.nuget.org/v3-flatcontainer/$ID/index.json"
             STATUS=$(curl -sS --max-time 30 -o /tmp/versions.json -w '%{http_code}' "$URL") || {
               echo "::error::Could not reach nuget.org to check $ID for an existing $VERSION." && exit 1
@@ -175,7 +175,7 @@ jobs:
             esac
           done
 
-          if [ "$PUBLISHED" -eq 3 ]; then
+          if [ "$PUBLISHED" -eq 4 ]; then
             echo "::error::$VERSION is already on nuget.org. Bump <Version> in Directory.Build.props." && exit 1
           fi
 
@@ -268,6 +268,31 @@ jobs:
           grep -q "PROVSTRIP001" pack-multi.log || { cat pack-multi.log; echo "::error::The multi-target pack failed, but not with PROVSTRIP001."; exit 1; }
           echo "Pack step fails on C2PA, single and multi target, and strips only the packed copy."
 
+      - name: Restore the Umbraco package into a site project from the packed file
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          FEED="$PWD/nupkgs"
+          WORK=$(mktemp -d)
+          cd "$WORK"
+          dotnet new web -o site --framework net10.0 > /dev/null
+          cd site
+          cat > nuget.config <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$FEED" />
+              <add key="nuget" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          # Resolves the Umbraco range and the engine from this run's feed, then builds against them.
+          dotnet add package BaryoDev.Umbraco.ProvStrip --version "$VERSION" --source "$FEED"
+          dotnet build -c Release > build.log 2>&1 || { cat build.log; echo "::error::A site referencing the Umbraco package does not build."; exit 1; }
+          grep -q '"BaryoDev.ProvStrip/'"$VERSION"'"' obj/project.assets.json || { echo "::error::The engine was not resolved at $VERSION."; exit 1; }
+          echo "The Umbraco package restores and builds in a net10.0 site."
+
       # Requested here rather than earlier because the key expires after an hour and each OIDC
       # token buys exactly one key. Runs on dry runs too, so a dry run actually verifies the
       # trusted publishing policy. Obtaining a key publishes nothing.
@@ -295,8 +320,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
         run: |
-          # Engine first, then the tool and the pack step, named rather than globbed.
-          for PKG in "BaryoDev.ProvStrip.$VERSION.nupkg" "BaryoDev.ProvStrip.Tool.$VERSION.nupkg" "BaryoDev.ProvStrip.Build.$VERSION.nupkg"; do
+          # Engine first, since the Umbraco package depends on it, then the rest, named rather than globbed.
+          for PKG in "BaryoDev.ProvStrip.$VERSION.nupkg" "BaryoDev.ProvStrip.Tool.$VERSION.nupkg" "BaryoDev.ProvStrip.Build.$VERSION.nupkg" "BaryoDev.Umbraco.ProvStrip.$VERSION.nupkg"; do
             test -f "./nupkgs/$PKG" || { echo "::error::$PKG was not packed"; exit 1; }
             dotnet nuget push "./nupkgs/$PKG" \
               --api-key "$NUGET_API_KEY" \
